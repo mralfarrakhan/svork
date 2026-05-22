@@ -16,6 +16,7 @@
     },
     "./package.json": "./package.json"
   },
+  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -26,7 +27,7 @@
     "typecheck": "tsc --noEmit",
     "release": "bumpp",
     "prepublishOnly": "tsdown",
-    "prepare": "tsdown"
+    "prepare": "tsdown --dst"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",

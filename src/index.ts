@@ -50,7 +50,6 @@ export const svelteMarkdown = (
         return { code: String(fallbackResult) };
       }
 
-      // Handle frontmatter before any other processing
       const firstNode = root.fragment?.nodes?.[0];
       if (firstNode?.type === "Text" && FRONTMATTER_REGEX.test(firstNode.raw)) {
         const match = firstNode.raw.match(FRONTMATTER_REGEX);
@@ -64,16 +63,16 @@ export const svelteMarkdown = (
             );
           }
         }
-        // Strip frontmatter from workingString and re-parse
         workingString =
           workingString.slice(0, firstNode.start) +
           workingString.slice(firstNode.end);
         try {
           root = parse(workingString, { modern: true }) as any;
         } catch (err) {
-          console.warn(
-            `[svelteMarkdown] Re-parse after frontmatter strip failed for ${filename}.`,
+          console.error(
+            `[svelteMarkdown] Re-parse after frontmatter strip failed for ${filename}, aborting.`,
           );
+          return { code: content };
         }
       }
 
@@ -85,7 +84,10 @@ export const svelteMarkdown = (
             if (node.type === "Text") return node.raw;
 
             const placeholder = `${PLACEHOLDER_PREFIX}${i}${PLACEHOLDER_SUFFIX}`;
-            const original = content.slice(node.start, node.end);
+            const original = workingString.slice(
+              node.start + offsetDelta,
+              node.end + offsetDelta,
+            );
             placeholderMap.set(placeholder, original);
             return placeholder;
           })
@@ -93,15 +95,11 @@ export const svelteMarkdown = (
 
         const processed = String(await mdCompiler.process(dedent(combined)));
 
-        // Restore Svelte expressions first, then escape any remaining braces
         const restored = processed.replace(
           new RegExp(`${PLACEHOLDER_PREFIX}\\d+${PLACEHOLDER_SUFFIX}`, "g"),
           (match) => placeholderMap.get(match) ?? match,
         );
 
-        // Escape braces that are NOT part of restored Svelte expressions.
-        // We do this by splitting on Svelte expression boundaries {…} and only
-        // escaping text segments, not the expressions themselves.
         return restored.replace(
           /(\{(?:[^{}])*\})|(\{)|(\})/g,
           (_, expr, open, close) => {
@@ -114,20 +112,27 @@ export const svelteMarkdown = (
 
       const collectText = async (node: any) => {
         if (!node) return;
-        if (node.fragment) await collectFragment(node.fragment);
 
         if (node.type === "EachBlock") {
           await collectFragment(node.body);
           if (node.fallback) await collectFragment(node.fallback);
         } else if (node.type === "IfBlock") {
           await collectFragment(node.consequent);
-          if (node.alternate) await collectFragment(node.alternate);
+          if (node.alternate) {
+            if (node.alternate.type === "IfBlock") {
+              await collectText(node.alternate);
+            } else {
+              await collectFragment(node.alternate);
+            }
+          }
         } else if (node.type === "AwaitBlock") {
           if (node.pending) await collectFragment(node.pending);
           if (node.then) await collectFragment(node.then);
           if (node.catch) await collectFragment(node.catch);
         } else if (node.type === "KeyBlock" || node.type === "SnippetBlock") {
           await collectFragment(node.body);
+        } else if (node.fragment) {
+          await collectFragment(node.fragment);
         }
       };
 
@@ -141,7 +146,6 @@ export const svelteMarkdown = (
           const node = nodes[i];
 
           if (node.type === "Text" || node.type === "ExpressionTag") {
-            // Collect consecutive Text + ExpressionTag siblings as one group
             const group: any[] = [];
             while (
               i < nodes.length &&
@@ -151,7 +155,6 @@ export const svelteMarkdown = (
               i++;
             }
 
-            // Only process if the group contains at least one non-empty text node
             const hasText = group.some(
               (n) => n.type === "Text" && n.raw.trim().length > 0,
             );
@@ -169,7 +172,6 @@ export const svelteMarkdown = (
               offsetDelta += processed.length - (groupEnd - groupStart);
             }
           } else {
-            // Recurse into block-level Svelte nodes
             await collectText(node);
             i++;
           }
@@ -180,7 +182,6 @@ export const svelteMarkdown = (
         await collectFragment(root.fragment);
       }
 
-      // Inject metadata into existing <script> or prepend a new one
       const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
 
       if (root.instance) {

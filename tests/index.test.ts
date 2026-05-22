@@ -36,11 +36,33 @@ This is a test file
       filename: "somefile.md",
     });
 
-    expect(result?.code).toBe("heehee");
+    expect(result?.code).toBe(`<script lang="ts">
+export const metadata = {"title":"Boo Dee","author":"Budi"};
+import Budi from 'Budi.svelte';
+const budi = "budi";
+import Badrul from 'Svelte.svelte';
+</script>
+
+<Hudi name={budi} />
+
+<Badrul><p>This is content</p></Badrul>
+
+<h1>Hello, { budi }!</h1>
+
+<p>This is a test file</p>
+
+<h1>Inventory List</h1>
+
+{#each items as item}
+<ul>
+<li>{item.name} - {item.price}</li>
+</ul>
+{/each}
+`);
   });
 
   it("component", async () => {
-    const source = `<script lang="ts">
+    const source = `<script>
 import Budi from '../Budi.svelte';
 
 const budi = "budi";
@@ -56,6 +78,15 @@ This is {budi}
       filename: "somefile.md",
     });
 
-    expect(result?.code).toBe("heehee");
+    expect(result?.code).toBe(`<script lang="ts">
+export const metadata = {};
+
+import Budi from '../Budi.svelte';
+
+const budi = "budi";
+</script>
+
+<Budi name={budi}><p>This is {budi}</p></Budi>
+`);
   });
 });

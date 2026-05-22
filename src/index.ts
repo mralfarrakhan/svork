@@ -6,6 +6,23 @@ import rehypeRaw from "rehype-raw";
 import rehypeStringify from "rehype-stringify";
 import yaml from "js-yaml";
 
+type PlaceholderType =
+  | "Expression"
+  | "BlockBoundary"
+  | "InstanceScript"
+  | "ModuleScript";
+
+type Target = {
+  type: PlaceholderType;
+  start: number;
+  end: number;
+};
+
+type PlaceholderInfo = {
+  original: string;
+  type: PlaceholderType;
+};
+
 export type SvelteMarkdownOptions = {
   extensions?: string[];
   remarkPlugins?: PluggableList;
@@ -17,7 +34,7 @@ export const svelteMarkdown = (
 ): PreprocessorGroup => {
   const hasWantedExt = (s: string) =>
     (options?.extensions ?? [".md"]).some((e) => s.endsWith(e));
-  
+
   const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
   const mdCompiler = unified()
@@ -40,7 +57,7 @@ export const svelteMarkdown = (
       const fmMatch = workingString.match(FRONTMATTER_REGEX);
       if (fmMatch) {
         try {
-          metadata = yaml.load(fmMatch[1]) as Record<string, any>;
+          metadata = (yaml.load(fmMatch[1]) as Record<string, any>) ?? {};
         } catch (e) {
           console.error(
             `[svelteMarkdown] Frontmatter YAML parsing error in ${filename}:`,
@@ -50,6 +67,63 @@ export const svelteMarkdown = (
         workingString = workingString.slice(fmMatch[0].length);
       }
 
+      const finalize = async (
+        markdownSource: string,
+        placeholderMap = new Map<string, PlaceholderInfo>(),
+      ) => {
+        const compiled = String(await mdCompiler.process(markdownSource));
+        let restored = compiled.replace(/{/g, "&#123;").replace(/}/g, "&#125;");
+
+        const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
+        let hasInstanceScript = false;
+
+        for (const info of placeholderMap.values()) {
+          if (info.type === "InstanceScript") {
+            const scriptTagMatch = info.original.match(/^<script[^>]*>/);
+            if (scriptTagMatch) {
+              const injectIndex = scriptTagMatch[0].length;
+              info.original =
+                info.original.slice(0, injectIndex) +
+                metadataString +
+                info.original.slice(injectIndex);
+              hasInstanceScript = true;
+            }
+          }
+        }
+
+        for (const [placeholder, info] of placeholderMap.entries()) {
+          // Strip paragraph wrappers added by the markdown compiler for scripts and block boundaries.
+          if (
+            info.type === "InstanceScript" ||
+            info.type === "ModuleScript" ||
+            info.type === "BlockBoundary"
+          ) {
+            const pRegex = new RegExp(`<p>\\s*${placeholder}\\s*</p>`, "g");
+            if (pRegex.test(restored)) {
+              restored = restored.replace(pRegex, () => info.original);
+              continue;
+            }
+          }
+
+          // Restore exactly quoted attribute expressions like name="SVELTEEXP0SVELTE" -> name={budi}.
+          if (info.type === "Expression") {
+            const quotedRegex = new RegExp(`(["'])${placeholder}\\1`, "g");
+            if (quotedRegex.test(restored)) {
+              restored = restored.replace(quotedRegex, () => info.original);
+              continue;
+            }
+          }
+
+          restored = restored.replace(new RegExp(placeholder, "g"), () => info.original);
+        }
+
+        if (!hasInstanceScript) {
+          restored = `<script lang="ts">${metadataString}</script>\n` + restored;
+        }
+
+        return restored;
+      };
+
       // 2. Svelte Modern AST Parsing
       let root;
       try {
@@ -58,18 +132,25 @@ export const svelteMarkdown = (
         console.warn(
           `[svelteMarkdown] Svelte AST parsing failed for ${filename}, executing full-text fallback compilation.`,
         );
-        const fallbackResult = await mdCompiler.process(workingString);
-        return { code: String(fallbackResult) };
+        return { code: await finalize(workingString) };
       }
 
       // 3. Target Node Collection
-      const targets: { type: string; start: number; end: number }[] = [];
+      const targets: Target[] = [];
 
       if (root.instance) {
-        targets.push({ type: "Script", start: root.instance.start, end: root.instance.end });
+        targets.push({
+          type: "InstanceScript",
+          start: root.instance.start,
+          end: root.instance.end,
+        });
       }
       if (root.module) {
-        targets.push({ type: "Script", start: root.module.start, end: root.module.end });
+        targets.push({
+          type: "ModuleScript",
+          start: root.module.start,
+          end: root.module.end,
+        });
       }
 
       // Helper to compute start and end boundaries of an AST Fragment (since Svelte 5 AST Fragment has no start/end)
@@ -175,6 +256,27 @@ export const svelteMarkdown = (
           return;
         }
 
+        if (node.type === "RegularElement") {
+          const hasSvelteDirective = node.attributes?.some(
+            (attr: any) =>
+              attr.type !== "Attribute" &&
+              typeof attr.start === "number" &&
+              typeof attr.end === "number",
+          );
+
+          if (hasSvelteDirective) {
+            const bounds = getFragmentBounds(node.fragment);
+            if (bounds) {
+              targets.push({ type: "BlockBoundary", start: node.start, end: bounds.start });
+              targets.push({ type: "BlockBoundary", start: bounds.end, end: node.end });
+              walk(node.fragment);
+            } else {
+              targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+            }
+            return;
+          }
+        }
+
         if (node.type === "Component") {
           const bounds = getFragmentBounds(node.fragment);
           if (bounds) {
@@ -220,7 +322,7 @@ export const svelteMarkdown = (
       // 4. Back-to-Front Substitution
       validTargets.sort((a, b) => b.start - a.start);
 
-      const placeholderMap = new Map<string, { original: string; type: string }>();
+      const placeholderMap = new Map<string, PlaceholderInfo>();
       let substitutedString = workingString;
 
       for (let i = 0; i < validTargets.length; i++) {
@@ -238,69 +340,8 @@ export const svelteMarkdown = (
           substitutedString.slice(target.end);
       }
 
-      // 5. Continuous Markdown Compilation Pass
-      const compiled = String(await mdCompiler.process(substitutedString));
-
-      // 6. Escape Lone Curly Braces
-      // Since Svelte nodes and expressions are protected by placeholders, 
-      // all remaining '{' and '}' are guaranteed to be lone braces in text.
-      let escaped = compiled.replace(/{/g, "&#123;").replace(/}/g, "&#125;");
-
-      // 7. Inject Metadata & Restore Placeholders
-      const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
-      let hasScript = false;
-
-      // Inject metadata inside the instance script block if it exists
-      for (const [placeholder, info] of placeholderMap.entries()) {
-        if (
-          info.type === "Script" &&
-          info.original.startsWith("<script") &&
-          !info.original.includes('context="module"')
-        ) {
-          const scriptTagMatch = info.original.match(/^<script[^>]*>/);
-          if (scriptTagMatch) {
-            const injectIndex = scriptTagMatch[0].length;
-            info.original =
-              info.original.slice(0, injectIndex) +
-              metadataString +
-              info.original.slice(injectIndex);
-            hasScript = true;
-          }
-        }
-      }
-
-      let restored = escaped;
-
-      // Restore all placeholders
-      for (const [placeholder, info] of placeholderMap.entries()) {
-        // Strip paragraph wrappers added by the markdown compiler for Script and Block Boundaries
-        if (info.type === "Script" || info.type === "BlockBoundary") {
-          const pRegex = new RegExp(`<p>\\s*${placeholder}\\s*</p>`, "g");
-          if (pRegex.test(restored)) {
-            restored = restored.replace(pRegex, () => info.original);
-            continue;
-          }
-        }
-
-        // Restore exactly quoted attribute expressions like name="SVELTEEXP0SVELTE" -> name={budi}
-        if (info.type === "Expression") {
-          const quotedRegex = new RegExp(`(["'])${placeholder}\\1`, "g");
-          if (quotedRegex.test(restored)) {
-            restored = restored.replace(quotedRegex, () => info.original);
-            continue;
-          }
-        }
-
-        // Standard plain replacement
-        restored = restored.replace(new RegExp(placeholder, "g"), () => info.original);
-      }
-
-      // If no script block existed, create one to export metadata
-      if (!hasScript) {
-        restored = `<script lang="ts">${metadataString}</script>\n` + restored;
-      }
-
-      return { code: restored };
+      // 5. Continuous Markdown Compilation Pass, metadata injection, and placeholder restoration.
+      return { code: await finalize(substitutedString, placeholderMap) };
     },
   };
 };

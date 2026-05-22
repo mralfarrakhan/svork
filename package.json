@@ -1,7 +1,7 @@
 {
   "name": "svork",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Svelte utilities for writing blog",
   "author": "mralfarrakhan <alfarrakhan@gmail.com",
   "license": "MIT",
@@ -9,17 +9,28 @@
     "type": "git",
     "url": "https://github.com/mralfarrakhan/svork.git"
   },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "types": "./dist/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },
-  "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
@@ -30,22 +41,24 @@
     "prepare": "tsdown --dst"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
     "bumpp": "^11.1.0",
+    "svelte": "^5.55.9",
+    "tsdown": "^0.22.0",
+    "typescript": "^6.0.3",
     "unified": "^11.0.5",
     "vitest": "^4.1.7"
   },
+  "peerDependencies": {
+    "svelte": ">=5.0.0"
+  },
   "dependencies": {
-    "tsdown": "^0.22.0",
-    "typescript": "^6.0.3",
-    "@types/js-yaml": "^4.0.9",
-    "dedent": "^1.7.2",
     "js-yaml": "^4.1.1",
     "rehype-raw": "^7.0.0",
     "rehype-stringify": "^10.0.1",
     "remark-parse": "^11.0.0",
-    "remark-rehype": "^11.1.2",
-    "svelte": "^5.55.9"
+    "remark-rehype": "^11.1.2"
   },
   "inlinedDependencies": {
     "@types/unist": "3.0.3",

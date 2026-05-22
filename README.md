@@ -1,23 +1,5 @@
-# tsdown-starter
+# Svork
 
-A starter for creating a TypeScript package.
+Some utilities for building blog with svelte:
 
-## Development
-
-- Install dependencies:
-
-```bash
-npm install
-```
-
-- Run the unit tests:
-
-```bash
-npm run test
-```
-
-- Build the library:
-
-```bash
-npm run build
-```
+- `svelteMarkdown`: markdown preprocessor with svelte component.

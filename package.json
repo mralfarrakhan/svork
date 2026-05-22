@@ -28,12 +28,12 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "bumpp": "^11.1.0",
-    "tsdown": "^0.22.0",
-    "typescript": "^6.0.3",
     "unified": "^11.0.5",
     "vitest": "^4.1.7"
   },
   "dependencies": {
+    "tsdown": "^0.22.0",
+    "typescript": "^6.0.3",
     "@types/js-yaml": "^4.0.9",
     "dedent": "^1.7.2",
     "js-yaml": "^4.1.1",

@@ -1,17 +1,13 @@
 {
-  "name": "tsdown-starter",
+  "name": "svork",
   "type": "module",
   "version": "0.0.0",
-  "description": "A starter for creating a TypeScript package.",
-  "author": "Author Name <author.name@mail.com>",
+  "description": "Svelte utilities for writing blog",
+  "author": "mralfarrakhan <alfarrakhan@gmail.com",
   "license": "MIT",
-  "homepage": "https://github.com/author/library#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/author/library.git"
-  },
-  "bugs": {
-    "url": "https://github.com/author/library/issues"
+    "url": "https://github.com/mralfarrakhan/svork.git"
   },
   "exports": {
     ".": "./dist/index.mjs",
@@ -26,7 +22,8 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "release": "bumpp",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "tsdown",
+    "prepare": "tsdown"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
@@ -45,5 +42,17 @@
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "svelte": "^5.55.9"
+  },
+  "inlinedDependencies": {
+    "@types/unist": "3.0.3",
+    "bail": "2.0.2",
+    "devlop": "1.1.0",
+    "extend": "3.0.2",
+    "is-plain-obj": "4.1.0",
+    "trough": "2.2.0",
+    "unified": "11.0.5",
+    "unist-util-stringify-position": "4.0.0",
+    "vfile": "6.0.3",
+    "vfile-message": "4.0.3"
   }
 }

@@ -1,55 +1,44 @@
-# Project Agent Guide (`AGENTS.md`)
+# Svork Agent Guide
 
-This guide is designed for AI agents and developers building, modifying, or debugging the **Svork** codebase. It outlines the project's purpose, design, constraints, and architecture.
+Svork is a Svelte 5 Markdown preprocessor. The public entry point is `svelteMarkdown` in `src/index.ts`.
 
----
+## What It Does
 
-## Project Goal & Overview
+- Converts `.md` files into Svelte-compatible markup.
+- Supports Markdown mixed with Svelte scripts, components, expression tags, raw HTML, and block syntax such as `{#each}`, `{#if}`, `{#await}`, snippets, and keys.
+- Extracts YAML frontmatter and exports it as `metadata` from an instance script.
+- Accepts additional `remarkPlugins` and `rehypePlugins`.
 
-- **Purpose**: Provide a lightweight Svelte preprocessor (`svelteMarkdown`) that allows writing blogs using Markdown intermixed with interactive Svelte components, scripts, expression tags, and block structures (like loops/conditionals).
-- **Target Environment**: Svelte 5+ applications.
-- **Key Benefit**: Natively avoids common pitfalls where standard markdown compilers break on Svelte syntax (like `{}` braces, HTML blocks, or Svelte control flow blocks) by using a robust single-pass compilation pipeline.
+## Core Pipeline
 
----
+1. Match configured extensions, defaulting to `.md`.
+2. Strip YAML frontmatter before Svelte parsing.
+3. Parse the remaining source with `parse(..., { modern: true })` from `svelte/compiler`.
+4. Protect Svelte-owned spans with alphanumeric placeholders before Markdown compilation:
+   - instance and module scripts
+   - expression-like tags
+   - Svelte block boundaries
+   - component and directive-sensitive element boundaries
+5. Run the full document through `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify`.
+6. Escape remaining text braces so lone `{` and `}` do not break Svelte compilation.
+7. Restore placeholders, stripping quotes around restored attribute expressions where needed.
+8. Inject `export const metadata = ...` into an instance script, or prepend a new instance script when none exists.
 
-## Architecture & Processing Pipeline
+If Svelte parsing fails, the fallback still runs Markdown processing, escapes lone braces, and exports frontmatter metadata.
 
-- **Unified Pipeline**: Uses `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify` under the hood to process Markdown and raw HTML.
-- **Svelte Compiler Integration**: Uses Svelte's official `parse` compiler from `svelte/compiler` to parse the file into an Abstract Syntax Tree (AST) before applying markdown transformations.
-- **Processing Steps**:
-  1. **Extension Check**: Verifies if the file matches configured extensions (defaults to `.md`).
-  2. **Direct Frontmatter Extraction**: Strips YAML frontmatter directly from the raw string using regex before Svelte AST parsing, preventing YAML parsing syntax from tripping the compiler.
-  3. **Svelte AST Parsing**: Attempts to parse the clean Svelte code with Svelte. If it fails, falls back to full-text markdown processing.
-  4. **Fragment Span Resolution (`getFragmentBounds`)**: Svelte 5 modern AST `Fragment` nodes do not have `start` and `end` coordinates. The utility computes boundaries dynamically by looking at the spans of the first and last child nodes.
-  5. **Target Node Collection**: Walk the Svelte modern AST recursively to collect script tags, tags (`ExpressionTag`, `HtmlTag`, `ConstTag`, `DebugTag`, `RenderTag`), block boundaries (`EachBlock`, `IfBlock`, `AwaitBlock`, `SnippetBlock`, `KeyBlock`), and Svelte custom component tags (`Component`).
-  6. **Back-to-Front Alphanumeric Substitution**: Sorts target nodes/boundaries by their start index in descending order and replaces them with unique alphanumeric placeholders (e.g. `SVELTESCRIPTSVELTE`, `SVELTEEXPSVELTE`, `SVELTEBLOCKBOUNDARYSVELTE`). This ensures earlier AST index values remain perfectly aligned.
-  7. **Single-Pass Compilation**: Processes the entire document as a continuous block through the unified Markdown parser. This natively preserves inline Svelte components inside list items and paragraphs without causing paragraph fragmentation.
-  8. **Lone Brace Escaping**: Escapes all remaining lone curly braces (`{` -> `&#123;`, `}` -> `&#125;`). Since Svelte expressions and blocks are protected by placeholders, any remaining curly braces are guaranteed to be lone text braces.
-  9. **Restoration & Quote Stripping**: Restores all Svelte block boundaries, script tags, and expressions. Specifically strips double/single quotes around attribute-level expression placeholders to preserve correct Svelte component bindings (e.g. `name={budi}`).
-  10. **Metadata Export Injection**: Appends metadata to the instance script block, or prepends a new `<script>` tag if none was present.
+## Files
 
----
+- `src/index.ts`: implementation.
+- `tests/index.test.ts`: behavior tests with Vitest and Svelte compiler checks.
+- `tsdown.config.js`: library build.
+- `package.json`: package metadata and Bun scripts.
 
-## Codebase Structure
+## Development
 
-- `src/index.ts`: The primary entry point containing the preprocessor function `svelteMarkdown` and its core compilation logic.
-- `tests/index.test.ts`: Test suite utilizing `vitest` to verify metadata parsing, component inclusion, lists, nested curly brace expressions, and inline components in lists.
-- `tsdown.config.js` & `tsconfig.json`: Build configurations using `tsdown` (a TypeScript bundler) to output CJS/ESM modules in `dist/`.
-- `package.json`: Holds dependencies (like `svelte`, `js-yaml`, `dedent`, and unified packages) and build scripts.
+Use Bun for this repo.
 
----
+- Test: `bun run test`
+- Typecheck: `bun run typecheck`
+- Build: `bun run build`
 
-## Crucial Technical Subtleties
-
-- **Nested Curly Brace Stability**: Fully supports expressions with nested braces (such as `{ { theme: 'dark' } }`) by protecting the entire expression block as a single Svelte AST `ExpressionTag` node.
-- **Component Boundary Handling**: Self-closing components are replaced as a single placeholder block, while custom components with children are replaced at their start/end boundaries, allowing the inner content to compile cleanly as markdown.
-- **Custom Alphanumeric Placeholders**: Placeholders do not use markdown characters (like double underscores `__`), which ensures they are never parsed as bold/italic formatting by the markdown parser.
-
----
-
-## Development & Testing Workflow
-
-- **Tools**: Use `bun` if availaible, otherwise `node`/`npm`.
-- **Build Command**: `bun run build` / `npm run build` using `tsdown` compiles the library to `/dist`.
-- **Testing Command**: `bun test` / `npm test` runs `vitest` to assert compilation correctness.
-- **Adding Plugins**: Users can inject additional plugins using the `remarkPlugins` and `rehypePlugins` options in the `SvelteMarkdownOptions` configuration object.
+Keep changes focused on the preprocessor behavior and cover parser-sensitive fixes with tests that compile the generated Svelte output.

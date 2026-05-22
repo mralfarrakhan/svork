@@ -5,7 +5,6 @@ import remarkRehype from "remark-rehype";
 import rehypeRaw from "rehype-raw";
 import rehypeStringify from "rehype-stringify";
 import yaml from "js-yaml";
-import dedent from "dedent";
 
 export type SvelteMarkdownOptions = {
   extensions?: string[];
@@ -18,9 +17,8 @@ export const svelteMarkdown = (
 ): PreprocessorGroup => {
   const hasWantedExt = (s: string) =>
     (options?.extensions ?? [".md"]).some((e) => s.endsWith(e));
-  const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---/;
-  const PLACEHOLDER_PREFIX = "SVELTEEXPR";
-  const PLACEHOLDER_SUFFIX = "ENDEXPR";
+  
+  const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
   const mdCompiler = unified()
     .use(remarkParse)
@@ -37,164 +35,272 @@ export const svelteMarkdown = (
 
       let metadata: Record<string, any> = {};
       let workingString = content;
-      let offsetDelta = 0;
 
+      // 1. Direct Frontmatter Extraction
+      const fmMatch = workingString.match(FRONTMATTER_REGEX);
+      if (fmMatch) {
+        try {
+          metadata = yaml.load(fmMatch[1]) as Record<string, any>;
+        } catch (e) {
+          console.error(
+            `[svelteMarkdown] Frontmatter YAML parsing error in ${filename}:`,
+            e,
+          );
+        }
+        workingString = workingString.slice(fmMatch[0].length);
+      }
+
+      // 2. Svelte Modern AST Parsing
       let root;
       try {
-        root = parse(content, { modern: true }) as any;
+        root = parse(workingString, { modern: true }) as any;
       } catch (err) {
         console.warn(
           `[svelteMarkdown] Svelte AST parsing failed for ${filename}, executing full-text fallback compilation.`,
         );
-        const fallbackResult = await mdCompiler.process(content);
+        const fallbackResult = await mdCompiler.process(workingString);
         return { code: String(fallbackResult) };
       }
 
-      const firstNode = root.fragment?.nodes?.[0];
-      if (firstNode?.type === "Text" && FRONTMATTER_REGEX.test(firstNode.raw)) {
-        const match = firstNode.raw.match(FRONTMATTER_REGEX);
-        if (match) {
-          try {
-            metadata = yaml.load(match[1]) as Record<string, any>;
-          } catch (e) {
-            console.error(
-              `[svelteMarkdown] Frontmatter YAML parsing error in ${filename}:`,
-              e,
-            );
-          }
-        }
-        workingString =
-          workingString.slice(0, firstNode.start) +
-          workingString.slice(firstNode.end);
-        try {
-          root = parse(workingString, { modern: true }) as any;
-        } catch (err) {
-          console.error(
-            `[svelteMarkdown] Re-parse after frontmatter strip failed for ${filename}, aborting.`,
-          );
-          return { code: content };
-        }
-      }
-
-      const processGroup = async (nodes: any[]) => {
-        const placeholderMap = new Map<string, string>();
-
-        const combined = nodes
-          .map((node, i) => {
-            if (node.type === "Text") return node.raw;
-
-            const placeholder = `${PLACEHOLDER_PREFIX}${i}${PLACEHOLDER_SUFFIX}`;
-            const original = workingString.slice(
-              node.start + offsetDelta,
-              node.end + offsetDelta,
-            );
-            placeholderMap.set(placeholder, original);
-            return placeholder;
-          })
-          .join("");
-
-        const processed = String(await mdCompiler.process(dedent(combined)));
-
-        const restored = processed.replace(
-          new RegExp(`${PLACEHOLDER_PREFIX}\\d+${PLACEHOLDER_SUFFIX}`, "g"),
-          (match) => placeholderMap.get(match) ?? match,
-        );
-
-        return restored.replace(
-          /(\{(?:[^{}])*\})|(\{)|(\})/g,
-          (_, expr, open, close) => {
-            if (expr) return expr; // keep {expression} intact
-            if (open) return "&#123;"; // lone { → escape
-            return "&#125;"; // lone } → escape
-          },
-        );
-      };
-
-      const collectText = async (node: any) => {
-        if (!node) return;
-
-        if (node.type === "EachBlock") {
-          await collectFragment(node.body);
-          if (node.fallback) await collectFragment(node.fallback);
-        } else if (node.type === "IfBlock") {
-          await collectFragment(node.consequent);
-          if (node.alternate) {
-            if (node.alternate.type === "IfBlock") {
-              await collectText(node.alternate);
-            } else {
-              await collectFragment(node.alternate);
-            }
-          }
-        } else if (node.type === "AwaitBlock") {
-          if (node.pending) await collectFragment(node.pending);
-          if (node.then) await collectFragment(node.then);
-          if (node.catch) await collectFragment(node.catch);
-        } else if (node.type === "KeyBlock" || node.type === "SnippetBlock") {
-          await collectFragment(node.body);
-        } else if (node.fragment) {
-          await collectFragment(node.fragment);
-        }
-      };
-
-      const collectFragment = async (fragment: any) => {
-        if (!fragment || !Array.isArray(fragment.nodes)) return;
-
-        const nodes = fragment.nodes;
-        let i = 0;
-
-        while (i < nodes.length) {
-          const node = nodes[i];
-
-          if (node.type === "Text" || node.type === "ExpressionTag") {
-            const group: any[] = [];
-            while (
-              i < nodes.length &&
-              (nodes[i].type === "Text" || nodes[i].type === "ExpressionTag")
-            ) {
-              group.push(nodes[i]);
-              i++;
-            }
-
-            const hasText = group.some(
-              (n) => n.type === "Text" && n.raw.trim().length > 0,
-            );
-
-            if (hasText) {
-              const groupStart = group[0].start;
-              const groupEnd = group[group.length - 1].end;
-              const processed = await processGroup(group);
-
-              workingString =
-                workingString.slice(0, groupStart + offsetDelta) +
-                processed +
-                workingString.slice(groupEnd + offsetDelta);
-
-              offsetDelta += processed.length - (groupEnd - groupStart);
-            }
-          } else {
-            await collectText(node);
-            i++;
-          }
-        }
-      };
-
-      if (root.fragment) {
-        await collectFragment(root.fragment);
-      }
-
-      const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
+      // 3. Target Node Collection
+      const targets: { type: string; start: number; end: number }[] = [];
 
       if (root.instance) {
-        workingString =
-          workingString.slice(0, root.instance.content.start) +
-          metadataString +
-          workingString.slice(root.instance.content.start);
-      } else {
-        workingString =
-          `<script lang="ts">${metadataString}</script>\n` + workingString;
+        targets.push({ type: "Script", start: root.instance.start, end: root.instance.end });
+      }
+      if (root.module) {
+        targets.push({ type: "Script", start: root.module.start, end: root.module.end });
       }
 
-      return { code: workingString };
+      // Helper to compute start and end boundaries of an AST Fragment (since Svelte 5 AST Fragment has no start/end)
+      const getFragmentBounds = (frag: any) => {
+        if (frag && Array.isArray(frag.nodes) && frag.nodes.length > 0) {
+          return {
+            start: frag.nodes[0].start,
+            end: frag.nodes[frag.nodes.length - 1].end,
+          };
+        }
+        return null;
+      };
+
+      const walk = (node: any) => {
+        if (!node) return;
+
+        if (
+          node.type === "ExpressionTag" ||
+          node.type === "HtmlTag" ||
+          node.type === "ConstTag" ||
+          node.type === "DebugTag" ||
+          node.type === "RenderTag"
+        ) {
+          targets.push({ type: "Expression", start: node.start, end: node.end });
+          return;
+        }
+
+        if (node.type === "EachBlock") {
+          const bodyBounds = getFragmentBounds(node.body);
+          if (bodyBounds) {
+            targets.push({ type: "BlockBoundary", start: node.start, end: bodyBounds.start });
+            
+            const fallbackBounds = getFragmentBounds(node.fallback);
+            if (fallbackBounds) {
+              targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: fallbackBounds.start });
+              targets.push({ type: "BlockBoundary", start: fallbackBounds.end, end: node.end });
+              walk(node.fallback);
+            } else {
+              targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: node.end });
+            }
+            walk(node.body);
+          } else {
+            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+          }
+          return;
+        }
+
+        if (node.type === "IfBlock") {
+          const consequentBounds = getFragmentBounds(node.consequent);
+          if (consequentBounds) {
+            targets.push({ type: "BlockBoundary", start: node.start, end: consequentBounds.start });
+            
+            const alternateBounds = getFragmentBounds(node.alternate);
+            if (alternateBounds) {
+              if (node.alternate.type === "IfBlock") {
+                // Svelte else-if blocks are nested IfBlocks. The child IfBlock will handle its own boundaries recursively.
+                walk(node.alternate);
+              } else {
+                targets.push({ type: "BlockBoundary", start: consequentBounds.end, end: alternateBounds.start });
+                targets.push({ type: "BlockBoundary", start: alternateBounds.end, end: node.end });
+                walk(node.alternate);
+              }
+            } else {
+              targets.push({ type: "BlockBoundary", start: consequentBounds.end, end: node.end });
+            }
+            walk(node.consequent);
+          } else {
+            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+          }
+          return;
+        }
+
+        if (node.type === "AwaitBlock") {
+          const frags = [node.pending, node.then, node.catch]
+            .map(getFragmentBounds)
+            .filter(Boolean) as { start: number; end: number }[];
+          
+          if (frags.length > 0) {
+            targets.push({ type: "BlockBoundary", start: node.start, end: frags[0].start });
+            for (let i = 0; i < frags.length - 1; i++) {
+              targets.push({ type: "BlockBoundary", start: frags[i].end, end: frags[i+1].start });
+            }
+            targets.push({ type: "BlockBoundary", start: frags[frags.length - 1].end, end: node.end });
+          } else {
+            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+          }
+          if (node.pending) walk(node.pending);
+          if (node.then) walk(node.then);
+          if (node.catch) walk(node.catch);
+          return;
+        }
+
+        if (node.type === "KeyBlock" || node.type === "SnippetBlock") {
+          const body = node.body || node.fragment;
+          const bodyBounds = getFragmentBounds(body);
+          if (bodyBounds) {
+            targets.push({ type: "BlockBoundary", start: node.start, end: bodyBounds.start });
+            targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: node.end });
+            walk(body);
+          } else {
+            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+          }
+          return;
+        }
+
+        if (node.type === "Component") {
+          const bounds = getFragmentBounds(node.fragment);
+          if (bounds) {
+            targets.push({ type: "BlockBoundary", start: node.start, end: bounds.start });
+            targets.push({ type: "BlockBoundary", start: bounds.end, end: node.end });
+            walk(node.fragment);
+          } else {
+            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+          }
+          return;
+        }
+
+        if (node.fragment) {
+          walk(node.fragment);
+        }
+        if (Array.isArray(node.nodes)) {
+          for (const child of node.nodes) {
+            walk(child);
+          }
+        }
+
+        if (Array.isArray(node.attributes)) {
+          for (const attr of node.attributes) {
+            if (Array.isArray(attr.value)) {
+              for (const valNode of attr.value) {
+                walk(valNode);
+              }
+            } else if (attr.value) {
+              walk(attr.value);
+            }
+            if (attr.expression) {
+              walk(attr.expression);
+            }
+          }
+        }
+      };
+
+      walk(root.fragment);
+
+      // Remove invalid/empty boundaries
+      const validTargets = targets.filter((t) => t.start < t.end);
+
+      // 4. Back-to-Front Substitution
+      validTargets.sort((a, b) => b.start - a.start);
+
+      const placeholderMap = new Map<string, { original: string; type: string }>();
+      let substitutedString = workingString;
+
+      for (let i = 0; i < validTargets.length; i++) {
+        const target = validTargets[i];
+        const original = substitutedString.slice(target.start, target.end);
+        
+        // Use pure alphanumeric identifiers to prevent Markdown compilers from parsing double underscores '__' as bold
+        const placeholder = `SVELTE${target.type.toUpperCase()}${i}SVELTE`;
+
+        placeholderMap.set(placeholder, { original, type: target.type });
+
+        substitutedString =
+          substitutedString.slice(0, target.start) +
+          placeholder +
+          substitutedString.slice(target.end);
+      }
+
+      // 5. Continuous Markdown Compilation Pass
+      const compiled = String(await mdCompiler.process(substitutedString));
+
+      // 6. Escape Lone Curly Braces
+      // Since Svelte nodes and expressions are protected by placeholders, 
+      // all remaining '{' and '}' are guaranteed to be lone braces in text.
+      let escaped = compiled.replace(/{/g, "&#123;").replace(/}/g, "&#125;");
+
+      // 7. Inject Metadata & Restore Placeholders
+      const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
+      let hasScript = false;
+
+      // Inject metadata inside the instance script block if it exists
+      for (const [placeholder, info] of placeholderMap.entries()) {
+        if (
+          info.type === "Script" &&
+          info.original.startsWith("<script") &&
+          !info.original.includes('context="module"')
+        ) {
+          const scriptTagMatch = info.original.match(/^<script[^>]*>/);
+          if (scriptTagMatch) {
+            const injectIndex = scriptTagMatch[0].length;
+            info.original =
+              info.original.slice(0, injectIndex) +
+              metadataString +
+              info.original.slice(injectIndex);
+            hasScript = true;
+          }
+        }
+      }
+
+      let restored = escaped;
+
+      // Restore all placeholders
+      for (const [placeholder, info] of placeholderMap.entries()) {
+        // Strip paragraph wrappers added by the markdown compiler for Script and Block Boundaries
+        if (info.type === "Script" || info.type === "BlockBoundary") {
+          const pRegex = new RegExp(`<p>\\s*${placeholder}\\s*</p>`, "g");
+          if (pRegex.test(restored)) {
+            restored = restored.replace(pRegex, () => info.original);
+            continue;
+          }
+        }
+
+        // Restore exactly quoted attribute expressions like name="SVELTEEXP0SVELTE" -> name={budi}
+        if (info.type === "Expression") {
+          const quotedRegex = new RegExp(`(["'])${placeholder}\\1`, "g");
+          if (quotedRegex.test(restored)) {
+            restored = restored.replace(quotedRegex, () => info.original);
+            continue;
+          }
+        }
+
+        // Standard plain replacement
+        restored = restored.replace(new RegExp(placeholder, "g"), () => info.original);
+      }
+
+      // If no script block existed, create one to export metadata
+      if (!hasScript) {
+        restored = `<script lang="ts">${metadataString}</script>\n` + restored;
+      }
+
+      return { code: restored };
     },
   };
 };

@@ -5,16 +5,18 @@ This guide is designed for AI agents and developers building, modifying, or debu
 ---
 
 ## Project Goal & Overview
-* **Purpose**: Provide a lightweight Svelte preprocessor (`svelteMarkdown`) that allows writing blogs using Markdown intermixed with interactive Svelte components, scripts, expression tags, and block structures (like loops/conditionals).
-* **Target Environment**: Svelte 5+ applications.
-* **Key Benefit**: Natively avoids common pitfalls where standard markdown compilers break on Svelte syntax (like `{}` braces, HTML blocks, or Svelte control flow blocks) by using a robust single-pass compilation pipeline.
+
+- **Purpose**: Provide a lightweight Svelte preprocessor (`svelteMarkdown`) that allows writing blogs using Markdown intermixed with interactive Svelte components, scripts, expression tags, and block structures (like loops/conditionals).
+- **Target Environment**: Svelte 5+ applications.
+- **Key Benefit**: Natively avoids common pitfalls where standard markdown compilers break on Svelte syntax (like `{}` braces, HTML blocks, or Svelte control flow blocks) by using a robust single-pass compilation pipeline.
 
 ---
 
 ## Architecture & Processing Pipeline
-* **Unified Pipeline**: Uses `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify` under the hood to process Markdown and raw HTML.
-* **Svelte Compiler Integration**: Uses Svelte's official `parse` compiler from `svelte/compiler` to parse the file into an Abstract Syntax Tree (AST) before applying markdown transformations.
-* **Processing Steps**:
+
+- **Unified Pipeline**: Uses `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify` under the hood to process Markdown and raw HTML.
+- **Svelte Compiler Integration**: Uses Svelte's official `parse` compiler from `svelte/compiler` to parse the file into an Abstract Syntax Tree (AST) before applying markdown transformations.
+- **Processing Steps**:
   1. **Extension Check**: Verifies if the file matches configured extensions (defaults to `.md`).
   2. **Direct Frontmatter Extraction**: Strips YAML frontmatter directly from the raw string using regex before Svelte AST parsing, preventing YAML parsing syntax from tripping the compiler.
   3. **Svelte AST Parsing**: Attempts to parse the clean Svelte code with Svelte. If it fails, falls back to full-text markdown processing.
@@ -29,21 +31,25 @@ This guide is designed for AI agents and developers building, modifying, or debu
 ---
 
 ## Codebase Structure
-* `src/index.ts`: The primary entry point containing the preprocessor function `svelteMarkdown` and its core compilation logic.
-* `tests/index.test.ts`: Test suite utilizing `vitest` to verify metadata parsing, component inclusion, lists, nested curly brace expressions, and inline components in lists.
-* `tsdown.config.js` & `tsconfig.json`: Build configurations using `tsdown` (a TypeScript bundler) to output CJS/ESM modules in `dist/`.
-* `package.json`: Holds dependencies (like `svelte`, `js-yaml`, `dedent`, and unified packages) and build scripts.
+
+- `src/index.ts`: The primary entry point containing the preprocessor function `svelteMarkdown` and its core compilation logic.
+- `tests/index.test.ts`: Test suite utilizing `vitest` to verify metadata parsing, component inclusion, lists, nested curly brace expressions, and inline components in lists.
+- `tsdown.config.js` & `tsconfig.json`: Build configurations using `tsdown` (a TypeScript bundler) to output CJS/ESM modules in `dist/`.
+- `package.json`: Holds dependencies (like `svelte`, `js-yaml`, `dedent`, and unified packages) and build scripts.
 
 ---
 
 ## Crucial Technical Subtleties
-* **Nested Curly Brace Stability**: Fully supports expressions with nested braces (such as `{ { theme: 'dark' } }`) by protecting the entire expression block as a single Svelte AST `ExpressionTag` node.
-* **Component Boundary Handling**: Self-closing components are replaced as a single placeholder block, while custom components with children are replaced at their start/end boundaries, allowing the inner content to compile cleanly as markdown.
-* **Custom Alphanumeric Placeholders**: Placeholders do not use markdown characters (like double underscores `__`), which ensures they are never parsed as bold/italic formatting by the markdown parser.
+
+- **Nested Curly Brace Stability**: Fully supports expressions with nested braces (such as `{ { theme: 'dark' } }`) by protecting the entire expression block as a single Svelte AST `ExpressionTag` node.
+- **Component Boundary Handling**: Self-closing components are replaced as a single placeholder block, while custom components with children are replaced at their start/end boundaries, allowing the inner content to compile cleanly as markdown.
+- **Custom Alphanumeric Placeholders**: Placeholders do not use markdown characters (like double underscores `__`), which ensures they are never parsed as bold/italic formatting by the markdown parser.
 
 ---
 
 ## Development & Testing Workflow
-* **Build Command**: `bun run build` / `npm run build` using `tsdown` compiles the library to `/dist`.
-* **Testing Command**: `bun test` / `npm test` runs `vitest` to assert compilation correctness.
-* **Adding Plugins**: Users can inject additional plugins using the `remarkPlugins` and `rehypePlugins` options in the `SvelteMarkdownOptions` configuration object.
+
+- **Tools**: Use `bun` if availaible, otherwise `node`/`npm`.
+- **Build Command**: `bun run build` / `npm run build` using `tsdown` compiles the library to `/dist`.
+- **Testing Command**: `bun test` / `npm test` runs `vitest` to assert compilation correctness.
+- **Adding Plugins**: Users can inject additional plugins using the `remarkPlugins` and `rehypePlugins` options in the `SvelteMarkdownOptions` configuration object.

@@ -198,4 +198,40 @@ Text { only
     expect(result?.code).toContain(`<p>Text &#123; only</p>`);
     expect(() => compile(result?.code ?? "", { filename: "fallback.svelte" })).not.toThrow();
   });
+
+  it("preserves braces inside code fences", async () => {
+    const source = "```\nconst a = { test: true }\n```";
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "code.md",
+    });
+
+    expect(result?.code).toContain("const a = { test: true }");
+  });
+
+  it("preserves braces inside script tags", async () => {
+    const source = `<script>\nconst x = { a: 1 };\n</script>\n# Title`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "script.md",
+    });
+
+    expect(result?.code).toContain("const x = { a: 1 };");
+    expect(() => compile(result?.code ?? "", { filename: "script.svelte" })).not.toThrow();
+  });
+
+  it("does not collide with literal placeholder-like tokens", async () => {
+    const source = `SVELTE_FAKE_TOKEN\n\n<script>\nconst budi = 'budi';\n</script>\n\n# Hello { budi }`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "collision.md",
+    });
+
+    expect(result?.code).toContain("SVELTE_FAKE_TOKEN");
+    expect(result?.code).toContain("{ budi }");
+  });
+
 });

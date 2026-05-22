@@ -29,6 +29,39 @@ export type SvelteMarkdownOptions = {
   rehypePlugins?: PluggableList;
 };
 
+// Lightweight id generator to avoid deterministic collisions
+const genId = () => `SVELTE_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+
+// Rehype plugin: escape lone braces only in text nodes, skipping code/pre/script/style
+function escapeBracesPlugin() {
+  return (tree: any) => {
+    const SKIP = new Set(["code", "pre", "script", "style"]);
+
+    const visit = (node: any, ancestors: any[]) => {
+      if (!node) return;
+      if (node.type === "text") {
+        const hasSkipAncestor = ancestors.some(
+          (a: any) => a?.type === "element" && typeof a.tagName === "string" && SKIP.has(a.tagName),
+        );
+        if (!hasSkipAncestor && typeof node.value === "string" && (node.value.includes("{") || node.value.includes("}"))) {
+          node.value = node.value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+        }
+      }
+
+      for (const key of Object.keys(node)) {
+        const child = node[key];
+        if (Array.isArray(child)) {
+          for (const c of child) visit(c, ancestors.concat(node));
+        } else if (child && typeof child === "object" && child.type) {
+          visit(child, ancestors.concat(node));
+        }
+      }
+    };
+
+    visit(tree, []);
+  };
+}
+
 export const svelteMarkdown = (
   options?: SvelteMarkdownOptions,
 ): PreprocessorGroup => {
@@ -42,6 +75,7 @@ export const svelteMarkdown = (
     .use(options?.remarkPlugins ?? [])
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
+    .use(escapeBracesPlugin)
     .use(options?.rehypePlugins ?? [])
     .use(rehypeStringify, { allowDangerousHtml: true });
 
@@ -71,8 +105,12 @@ export const svelteMarkdown = (
         markdownSource: string,
         placeholderMap = new Map<string, PlaceholderInfo>(),
       ) => {
-        const compiled = String(await mdCompiler.process(markdownSource));
-        let restored = compiled.replace(/{/g, "&#123;").replace(/}/g, "&#125;");
+        let compiled = String(await mdCompiler.process(markdownSource));
+        // Revert numeric entity double-escaping produced by stringifier (e.g. &amp;#123; or &#x26;#123;) back to &#123;/&#125;.
+        compiled = compiled
+          .replace(/(&amp;#123;|&#x26;#123;)/g, "&#123;")
+          .replace(/(&amp;#125;|&#x26;#125;)/g, "&#125;");
+        let restored = compiled;
 
         const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
         let hasInstanceScript = false;
@@ -92,13 +130,14 @@ export const svelteMarkdown = (
         }
 
         for (const [placeholder, info] of placeholderMap.entries()) {
+          const escPlaceholder = placeholder.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
           // Strip paragraph wrappers added by the markdown compiler for scripts and block boundaries.
           if (
             info.type === "InstanceScript" ||
             info.type === "ModuleScript" ||
             info.type === "BlockBoundary"
           ) {
-            const pRegex = new RegExp(`<p>\\s*${placeholder}\\s*</p>`, "g");
+            const pRegex = new RegExp(`<p>\\s*${escPlaceholder}\\s*</p>`, "g");
             if (pRegex.test(restored)) {
               restored = restored.replace(pRegex, () => info.original);
               continue;
@@ -107,9 +146,15 @@ export const svelteMarkdown = (
 
           // Restore exactly quoted attribute expressions like name="SVELTEEXP0SVELTE" -> name={budi}.
           if (info.type === "Expression") {
-            const quotedRegex = new RegExp(`(["'])${placeholder}\\1`, "g");
+            const quotedRegex = new RegExp(`(["'])${escPlaceholder}\\1`, "g");
             if (quotedRegex.test(restored)) {
               restored = restored.replace(quotedRegex, () => info.original);
+              continue;
+            }
+
+            const braceWrappedRegex = new RegExp(`\\{\\s*${escPlaceholder}\\s*\\}`, "g");
+            if (braceWrappedRegex.test(restored)) {
+              restored = restored.replace(braceWrappedRegex, () => info.original);
               continue;
             }
           }
@@ -330,7 +375,8 @@ export const svelteMarkdown = (
         const original = substitutedString.slice(target.start, target.end);
         
         // Use pure alphanumeric identifiers to prevent Markdown compilers from parsing double underscores '__' as bold
-        const placeholder = `SVELTE${target.type.toUpperCase()}${i}SVELTE`;
+        const id = genId();
+        const placeholder = `SVELTE_${target.type.toUpperCase()}_${id}_${i}_SVELTE`;
 
         placeholderMap.set(placeholder, { original, type: target.type });
 

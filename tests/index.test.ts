@@ -17,7 +17,7 @@ author: Budi
 <Hudi name={budi} />
 
 <Badrul>
-    This is content
+This is content
 </Badrul>
 
 # Hello, { budi }!
@@ -27,7 +27,7 @@ This is a test file
 # Inventory List
 
 {#each items as item}
-  * {item.name} - {item.price}
+- {item.name} - {item.price}
 {/each}
 `;
 
@@ -47,7 +47,7 @@ const budi = "budi";
 </script>
 
 <Budi name={budi}>
-    This is {budi}
+This is {budi}
 </Budi>
 `;
 

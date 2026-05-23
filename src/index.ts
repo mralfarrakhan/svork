@@ -50,19 +50,121 @@ const isSvelteAttribute = (attr: any) => {
   return attr.value?.type === "ExpressionTag";
 };
 
-// Rehype plugin: escape lone braces only in text nodes, skipping code/pre/script/style
+const maskRange = (chars: string[], start: number, end: number) => {
+  for (let i = start; i < end; i++) {
+    if (chars[i] !== "\n" && chars[i] !== "\r") chars[i] = " ";
+  }
+};
+
+const overlapsRange = (
+  ranges: Array<{ start: number; end: number }>,
+  start: number,
+  end: number,
+) => ranges.some((range) => start < range.end && end > range.start);
+
+const getScriptRanges = (source: string) => {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const scriptRegex = /<script\b[\s\S]*?<\/script>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptRegex.exec(source))) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+
+  return ranges;
+};
+
+const maskMarkdownCodeForSvelteParse = (source: string) => {
+  const chars = source.split("");
+  const maskedRanges: Array<{ start: number; end: number }> = [];
+  const lines = source.matchAll(/[^\n]*(?:\n|$)/g);
+  let fence: { marker: "`" | "~"; length: number; start: number } | null = null;
+
+  for (const lineMatch of lines) {
+    const line = lineMatch[0];
+    const lineStart = lineMatch.index ?? 0;
+    if (line === "" && lineStart === source.length) continue;
+
+    if (fence) {
+      const closeMatch = line.match(/^( {0,3})(`{3,}|~{3,})\s*(?:\n|$)/);
+      const closeMarker = closeMatch?.[2];
+      if (
+        closeMarker &&
+        closeMarker[0] === fence.marker &&
+        closeMarker.length >= fence.length
+      ) {
+        const end = lineStart + line.length;
+        maskedRanges.push({ start: fence.start, end });
+        maskRange(chars, fence.start, end);
+        fence = null;
+      }
+      continue;
+    }
+
+    const openMatch = line.match(/^( {0,3})(`{3,}|~{3,})/);
+    const openMarker = openMatch?.[2];
+    if (openMarker) {
+      fence = {
+        marker: openMarker[0] as "`" | "~",
+        length: openMarker.length,
+        start: lineStart,
+      };
+    }
+  }
+
+  if (fence) {
+    maskedRanges.push({ start: fence.start, end: source.length });
+    maskRange(chars, fence.start, source.length);
+  }
+
+  const ignoredInlineRanges = maskedRanges.concat(getScriptRanges(source));
+  const inlineCodeRegex = /(`+)([^\n]*?)\1/g;
+  let inlineMatch: RegExpExecArray | null;
+
+  while ((inlineMatch = inlineCodeRegex.exec(source))) {
+    const start = inlineMatch.index;
+    const end = start + inlineMatch[0].length;
+    if (overlapsRange(ignoredInlineRanges, start, end)) continue;
+    maskRange(chars, start, end);
+  }
+
+  return chars.join("");
+};
+
+const escapeSvelteTextBraces = (value: string) =>
+  value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+
+// Rehype plugin: escape leftover braces after user plugins have generated their HTML.
 function escapeBracesPlugin() {
   return (tree: any) => {
-    const SKIP = new Set(["code", "pre", "script", "style"]);
+    const SKIP = new Set(["script", "style"]);
+
+    const escapeProperties = (properties: Record<string, any> | undefined) => {
+      if (!properties) return;
+
+      for (const [key, value] of Object.entries(properties)) {
+        if (typeof value === "string") {
+          properties[key] = escapeSvelteTextBraces(value);
+        } else if (Array.isArray(value)) {
+          properties[key] = value.map((item) =>
+            typeof item === "string" ? escapeSvelteTextBraces(item) : item,
+          );
+        }
+      }
+    };
 
     const visit = (node: any, ancestors: any[]) => {
       if (!node) return;
+      if (node.type === "element") {
+        escapeProperties(node.properties);
+      }
+
       if (node.type === "text") {
         const hasSkipAncestor = ancestors.some(
           (a: any) => a?.type === "element" && typeof a.tagName === "string" && SKIP.has(a.tagName),
         );
         if (!hasSkipAncestor && typeof node.value === "string" && (node.value.includes("{") || node.value.includes("}"))) {
-          node.value = node.value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+          node.value = escapeSvelteTextBraces(node.value);
         }
       }
 
@@ -93,8 +195,8 @@ export const svelteMarkdown = (
     .use(options?.remarkPlugins ?? [])
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
-    .use(escapeBracesPlugin)
     .use(options?.rehypePlugins ?? [])
+    .use(escapeBracesPlugin)
     .use(rehypeStringify, { allowDangerousHtml: true });
 
   return {
@@ -191,7 +293,7 @@ export const svelteMarkdown = (
       // 2. Svelte Modern AST Parsing
       let root;
       try {
-        root = parse(workingString, { modern: true }) as any;
+        root = parse(maskMarkdownCodeForSvelteParse(workingString), { modern: true }) as any;
       } catch (err) {
         console.warn(
           `[svelteMarkdown] Svelte AST parsing failed for ${filename}, executing full-text fallback compilation.`,

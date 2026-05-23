@@ -67,12 +67,32 @@ type SvelteMarkdownOptions = {
 
 `extensions` defaults to `[".md"]`.
 
+Example with common unified plugins:
+
+```js
+import rehypeExpressiveCode from "rehype-expressive-code";
+import remarkGfm from "remark-gfm";
+import { svelteMarkdown } from "svork";
+
+export default {
+  preprocess: [
+    svelteMarkdown({
+      remarkPlugins: [remarkGfm],
+      rehypePlugins: [[rehypeExpressiveCode, { themes: ["github-light"] }]],
+    }),
+  ],
+  extensions: [".svelte", ".md"],
+};
+```
+
 ## Behavior
 
 - Parses source with Svelte before Markdown processing so Svelte spans can be protected.
+- Hides Markdown code spans and fenced code blocks from the initial Svelte parse, so examples containing `{`, `}`, quotes, or component-like text stay ordinary code.
 - Processes the document as one Markdown stream, preserving inline components inside paragraphs and list items.
 - Preserves instance scripts, module scripts, Svelte components, and normal inline expression tags.
-- Escapes remaining text braces so literal `{` and `}` do not break Svelte compilation.
+- Runs user `remarkPlugins` and `rehypePlugins` through the unified pipeline.
+- Escapes remaining text and attribute braces after rehype plugins run, so generated highlighter markup remains Svelte-safe.
 - Emits unsupported Svelte syntax as text, including `{#if}`, `{#each}`, `{#snippet}`, `{@html}`, `{@render}`, and lowercase-element directives such as `bind:*` or `class:*`.
 - Falls back to Markdown processing with metadata export when Svelte parsing fails.
 

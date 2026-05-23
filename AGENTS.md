@@ -14,15 +14,16 @@ Svork is a Svelte 5 Markdown preprocessor. The public entry point is `svelteMark
 
 1. Match configured extensions, defaulting to `.md`.
 2. Strip YAML frontmatter before Svelte parsing.
-3. Parse the remaining source with `parse(..., { modern: true })` from `svelte/compiler`.
-4. Protect Svelte-owned spans with alphanumeric placeholders before Markdown compilation:
+3. Mask Markdown code spans and fenced code blocks with same-length whitespace before Svelte parsing. This keeps code examples from being collected as Svelte syntax while preserving source offsets.
+4. Parse the remaining source with `parse(..., { modern: true })` from `svelte/compiler`.
+5. Protect Svelte-owned spans with alphanumeric placeholders before Markdown compilation:
    - instance and module scripts
    - normal `ExpressionTag` nodes
    - component boundaries
-5. Run the full document through `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify`.
-6. Escape remaining text braces so lone `{` and `}` do not break Svelte compilation.
-7. Restore placeholders, stripping quotes around restored attribute expressions where needed.
-8. Inject `export const metadata = ...` into an instance script, or prepend a new instance script when none exists.
+6. Run the full document through `unified`, `remark-parse`, configured `remarkPlugins`, `remark-rehype`, `rehype-raw`, configured `rehypePlugins`, and `rehype-stringify`.
+7. Escape remaining text and attribute braces after user rehype plugins run, so generated markup from code highlighters remains Svelte-safe.
+8. Restore placeholders, stripping quotes around restored attribute expressions where needed.
+9. Inject `export const metadata = ...` into an instance script, or prepend a new instance script when none exists.
 
 If Svelte parsing fails, the fallback still runs Markdown processing, escapes lone braces, and exports frontmatter metadata.
 

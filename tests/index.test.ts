@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "svelte/compiler";
+import rehypeShiki from "@shikijs/rehype";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypeExpressiveCode from "rehype-expressive-code";
 import rehypeSlug from "rehype-slug";
@@ -434,6 +435,56 @@ Here is a footnote.[^1]
     expect(result?.code).toContain(`Footnote for {metadata.title}`);
     expect(result?.code).toContain(`<code>&#123;literal&#125;</code>`);
     expect(() => compile(result?.code ?? "", { filename: "footnotes.svelte" })).not.toThrow();
+  });
+
+  it("works with @shikijs/rehype: highlights code and escapes generated braces", async () => {
+    const source = `---
+title: Shiki Post
+---
+
+<script>
+const greeting = "Hello";
+</script>
+
+# {greeting}
+
+Here is some code:
+
+\`\`\`ts
+const options = { theme: "dark", active: true };
+function greet(name: string) {
+  return \`Hello, \${name}!\`;
+}
+\`\`\`
+
+And a plain expression: {greeting}
+`;
+
+    const result = await svelteMarkdown({
+      rehypePlugins: [
+        [rehypeShiki, { theme: "github-light" }],
+      ],
+    }).markup?.({ content: source, filename: "shiki.md" });
+
+    // 1. Shiki actually ran: code block is wrapped in highlighted spans
+    expect(result?.code).toContain("<span");
+    // Shiki wraps output in a <pre><code> inside a <shiki-> or plain element
+    expect(result?.code).toMatch(/<pre[^>]*>[\s\S]*<code/);
+
+    // 2. Braces inside the highlighted code are escaped — shiki emits raw text
+    //    like "{ theme..." which our escapeBracesPlugin must convert to &#123;
+    expect(result?.code).toContain("&#123;");
+    expect(result?.code).not.toMatch(/<code[\s\S]*?\{(?!#|\/)[\s\S]*?<\/code>/);
+
+    // 3. Svelte expression outside code block is untouched
+    expect(result?.code).toContain("{greeting}");
+
+    // 4. Script block and metadata survive
+    expect(result?.code).toContain(`export const metadata = {"title":"Shiki Post"};`);
+    expect(result?.code).toContain(`const greeting = "Hello";`);
+
+    // 5. Final output is valid Svelte
+    expect(() => compile(result?.code ?? "", { filename: "shiki.svelte" })).not.toThrow();
   });
 
 });

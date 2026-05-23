@@ -5,8 +5,9 @@ Svork is a Svelte 5 Markdown preprocessor. The public entry point is `svelteMark
 ## What It Does
 
 - Converts `.md` files into Svelte-compatible markup.
-- Supports Markdown mixed with Svelte scripts, components, expression tags, raw HTML, and block syntax such as `{#each}`, `{#if}`, `{#await}`, snippets, and keys.
+- Supports Markdown mixed with YAML frontmatter, Svelte scripts, Svelte components, and normal inline expression tags such as `{post.title}`.
 - Extracts YAML frontmatter and exports it as `metadata` from an instance script.
+- Treats unsupported Svelte syntax as Markdown text. This includes block/control syntax such as `{#if}`, `{#each}`, `{#snippet}`, `{@html}`, `{@render}`, and Svelte directives on lowercase HTML elements.
 - Accepts additional `remarkPlugins` and `rehypePlugins`.
 
 ## Core Pipeline
@@ -16,9 +17,8 @@ Svork is a Svelte 5 Markdown preprocessor. The public entry point is `svelteMark
 3. Parse the remaining source with `parse(..., { modern: true })` from `svelte/compiler`.
 4. Protect Svelte-owned spans with alphanumeric placeholders before Markdown compilation:
    - instance and module scripts
-   - expression-like tags
-   - Svelte block boundaries
-   - component and directive-sensitive element boundaries
+   - normal `ExpressionTag` nodes
+   - component boundaries
 5. Run the full document through `unified`, `remark-parse`, `remark-rehype`, `rehype-raw`, and `rehype-stringify`.
 6. Escape remaining text braces so lone `{` and `}` do not break Svelte compilation.
 7. Restore placeholders, stripping quotes around restored attribute expressions where needed.

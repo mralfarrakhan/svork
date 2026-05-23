@@ -8,7 +8,8 @@ import yaml from "js-yaml";
 
 type PlaceholderType =
   | "Expression"
-  | "BlockBoundary"
+  | "ComponentBoundary"
+  | "EscapedText"
   | "InstanceScript"
   | "ModuleScript";
 
@@ -31,6 +32,23 @@ export type SvelteMarkdownOptions = {
 
 // Lightweight id generator to avoid deterministic collisions
 const genId = () => `SVELTE_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+
+const escapeSvelteText = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\{/g, "&#123;")
+    .replace(/\}/g, "&#125;");
+
+const isSvelteAttribute = (attr: any) => {
+  if (!attr || attr.type !== "Attribute") return true;
+  if (Array.isArray(attr.value)) {
+    return attr.value.some((valueNode: any) => valueNode?.type !== "Text");
+  }
+
+  return attr.value?.type === "ExpressionTag";
+};
 
 // Rehype plugin: escape lone braces only in text nodes, skipping code/pre/script/style
 function escapeBracesPlugin() {
@@ -131,11 +149,12 @@ export const svelteMarkdown = (
 
         for (const [placeholder, info] of placeholderMap.entries()) {
           const escPlaceholder = placeholder.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
-          // Strip paragraph wrappers added by the markdown compiler for scripts and block boundaries.
+          // Strip paragraph wrappers added by the markdown compiler for scripts and component boundaries.
           if (
             info.type === "InstanceScript" ||
             info.type === "ModuleScript" ||
-            info.type === "BlockBoundary"
+            info.type === "ComponentBoundary" ||
+            info.type === "EscapedText"
           ) {
             const pRegex = new RegExp(`<p>\\s*${escPlaceholder}\\s*</p>`, "g");
             if (pRegex.test(restored)) {
@@ -212,112 +231,18 @@ export const svelteMarkdown = (
       const walk = (node: any) => {
         if (!node) return;
 
-        if (
-          node.type === "ExpressionTag" ||
-          node.type === "HtmlTag" ||
-          node.type === "ConstTag" ||
-          node.type === "DebugTag" ||
-          node.type === "RenderTag"
-        ) {
+        if (node.type === "ExpressionTag") {
           targets.push({ type: "Expression", start: node.start, end: node.end });
           return;
         }
 
-        if (node.type === "EachBlock") {
-          const bodyBounds = getFragmentBounds(node.body);
-          if (bodyBounds) {
-            targets.push({ type: "BlockBoundary", start: node.start, end: bodyBounds.start });
-            
-            const fallbackBounds = getFragmentBounds(node.fallback);
-            if (fallbackBounds) {
-              targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: fallbackBounds.start });
-              targets.push({ type: "BlockBoundary", start: fallbackBounds.end, end: node.end });
-              walk(node.fallback);
-            } else {
-              targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: node.end });
-            }
-            walk(node.body);
-          } else {
-            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
-          }
-          return;
-        }
-
-        if (node.type === "IfBlock") {
-          const consequentBounds = getFragmentBounds(node.consequent);
-          if (consequentBounds) {
-            targets.push({ type: "BlockBoundary", start: node.start, end: consequentBounds.start });
-            
-            const alternateBounds = getFragmentBounds(node.alternate);
-            if (alternateBounds) {
-              if (node.alternate.type === "IfBlock") {
-                // Svelte else-if blocks are nested IfBlocks. The child IfBlock will handle its own boundaries recursively.
-                walk(node.alternate);
-              } else {
-                targets.push({ type: "BlockBoundary", start: consequentBounds.end, end: alternateBounds.start });
-                targets.push({ type: "BlockBoundary", start: alternateBounds.end, end: node.end });
-                walk(node.alternate);
-              }
-            } else {
-              targets.push({ type: "BlockBoundary", start: consequentBounds.end, end: node.end });
-            }
-            walk(node.consequent);
-          } else {
-            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
-          }
-          return;
-        }
-
-        if (node.type === "AwaitBlock") {
-          const frags = [node.pending, node.then, node.catch]
-            .map(getFragmentBounds)
-            .filter(Boolean) as { start: number; end: number }[];
-          
-          if (frags.length > 0) {
-            targets.push({ type: "BlockBoundary", start: node.start, end: frags[0].start });
-            for (let i = 0; i < frags.length - 1; i++) {
-              targets.push({ type: "BlockBoundary", start: frags[i].end, end: frags[i+1].start });
-            }
-            targets.push({ type: "BlockBoundary", start: frags[frags.length - 1].end, end: node.end });
-          } else {
-            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
-          }
-          if (node.pending) walk(node.pending);
-          if (node.then) walk(node.then);
-          if (node.catch) walk(node.catch);
-          return;
-        }
-
-        if (node.type === "KeyBlock" || node.type === "SnippetBlock") {
-          const body = node.body || node.fragment;
-          const bodyBounds = getFragmentBounds(body);
-          if (bodyBounds) {
-            targets.push({ type: "BlockBoundary", start: node.start, end: bodyBounds.start });
-            targets.push({ type: "BlockBoundary", start: bodyBounds.end, end: node.end });
-            walk(body);
-          } else {
-            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
-          }
-          return;
-        }
-
         if (node.type === "RegularElement") {
-          const hasSvelteDirective = node.attributes?.some(
-            (attr: any) =>
-              attr.type !== "Attribute" &&
-              typeof attr.start === "number" &&
-              typeof attr.end === "number",
+          const hasUnsupportedSvelteAttribute = node.attributes?.some(
+            (attr: any) => isSvelteAttribute(attr),
           );
 
-          if (hasSvelteDirective) {
-            const bounds = getFragmentBounds(node.fragment);
-            if (bounds) {
-              targets.push({ type: "BlockBoundary", start: node.start, end: bounds.start });
-              targets.push({ type: "BlockBoundary", start: bounds.end, end: node.end });
-              walk(node.fragment);
-            } else {
-              targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
-            }
+          if (hasUnsupportedSvelteAttribute) {
+            targets.push({ type: "EscapedText", start: node.start, end: node.end });
             return;
           }
         }
@@ -325,11 +250,11 @@ export const svelteMarkdown = (
         if (node.type === "Component") {
           const bounds = getFragmentBounds(node.fragment);
           if (bounds) {
-            targets.push({ type: "BlockBoundary", start: node.start, end: bounds.start });
-            targets.push({ type: "BlockBoundary", start: bounds.end, end: node.end });
+            targets.push({ type: "ComponentBoundary", start: node.start, end: bounds.start });
+            targets.push({ type: "ComponentBoundary", start: bounds.end, end: node.end });
             walk(node.fragment);
           } else {
-            targets.push({ type: "BlockBoundary", start: node.start, end: node.end });
+            targets.push({ type: "ComponentBoundary", start: node.start, end: node.end });
           }
           return;
         }
@@ -340,21 +265,6 @@ export const svelteMarkdown = (
         if (Array.isArray(node.nodes)) {
           for (const child of node.nodes) {
             walk(child);
-          }
-        }
-
-        if (Array.isArray(node.attributes)) {
-          for (const attr of node.attributes) {
-            if (Array.isArray(attr.value)) {
-              for (const valNode of attr.value) {
-                walk(valNode);
-              }
-            } else if (attr.value) {
-              walk(attr.value);
-            }
-            if (attr.expression) {
-              walk(attr.expression);
-            }
           }
         }
       };
@@ -372,7 +282,9 @@ export const svelteMarkdown = (
 
       for (let i = 0; i < validTargets.length; i++) {
         const target = validTargets[i];
-        const original = substitutedString.slice(target.start, target.end);
+        const originalSource = substitutedString.slice(target.start, target.end);
+        const original =
+          target.type === "EscapedText" ? escapeSvelteText(originalSource) : originalSource;
         
         // Use pure alphanumeric identifiers to prevent Markdown compilers from parsing double underscores '__' as bold
         const id = genId();

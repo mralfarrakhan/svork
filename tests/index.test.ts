@@ -49,9 +49,10 @@ This is a test file
     expect(result?.code).toContain(`<Hudi name={budi} />`);
     expect(result?.code).toContain(`<Badrul>\nThis is content\n</Badrul>`);
 
-    // 4. Svelte block boundaries preserved
-    expect(result?.code).toContain(`{#each items as item}`);
-    expect(result?.code).toContain(`{/each}`);
+    // 4. Svelte block boundaries are emitted as text, not preserved as Svelte syntax.
+    expect(result?.code).toContain(`&#123;#each items as item&#125;`);
+    expect(result?.code).toContain(`&#123;/each&#125;`);
+    expect(() => compile(result?.code ?? "", { filename: "exact.svelte" })).not.toThrow();
   });
 
   it("component", async () => {
@@ -98,7 +99,7 @@ This is {budi}
     expect(result?.code).toContain(`<ul>\n<li>Item with <Badge text="New" /> inline component.</li>\n</ul>`);
   });
 
-  it("preserves svelte directives on regular elements", async () => {
+  it("treats svelte directives on regular elements as text", async () => {
     const source = `<script lang="ts">
 let name = "Budi";
 let ok = true;
@@ -106,6 +107,7 @@ const save = () => {};
 </script>
 
 <input bind:value={name} class:active={ok} on:click={save} />
+<div class={name}>Hello</div>
 `;
 
     const result = await svelteMarkdown().markup?.({
@@ -114,9 +116,74 @@ const save = () => {};
     });
 
     expect(result?.code).toContain(
-      `<input bind:value={name} class:active={ok} on:click={save} />`,
+      `&lt;input bind:value=&#123;name&#125; class:active=&#123;ok&#125; on:click=&#123;save&#125; /&gt;`,
     );
+    expect(result?.code).toContain(`&lt;div class=&#123;name&#125;&gt;Hello&lt;/div&gt;`);
     expect(() => compile(result?.code ?? "", { filename: "directives.svelte" })).not.toThrow();
+  });
+
+  it("preserves inline expressions inside plain html text", async () => {
+    const source = `<script>
+const name = "Budi";
+</script>
+
+<div class="note">Hello {name}</div>
+`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "plain-html.md",
+    });
+
+    expect(result?.code).toContain(`<div class="note">Hello {name}</div>`);
+    expect(() => compile(result?.code ?? "", { filename: "plain-html.svelte" })).not.toThrow();
+  });
+
+  it("treats svelte control and special tags as text", async () => {
+    const source = `<script>
+const ok = true;
+const content = "<strong>Hi</strong>";
+</script>
+
+{#if ok}
+{@html content}
+{:else}
+{@render child()}
+{/if}
+`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "control.md",
+    });
+
+    expect(result?.code).toContain(`&#123;#if ok&#125;`);
+    expect(result?.code).toContain(`&#123;@html content&#125;`);
+    expect(result?.code).toContain(`&#123;:else&#125;`);
+    expect(result?.code).toContain(`&#123;@render child()&#125;`);
+    expect(result?.code).toContain(`&#123;/if&#125;`);
+    expect(() => compile(result?.code ?? "", { filename: "control.svelte" })).not.toThrow();
+  });
+
+  it("preserves component props with valid js expressions", async () => {
+    const source = `<script lang="ts">
+import Card from "./Card.svelte";
+
+const post = { title: "Hello" };
+</script>
+
+<Card title={post.title} options={{ theme: "dark", count: 2 }} />
+`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "component-props.md",
+    });
+
+    expect(result?.code).toContain(
+      `<Card title={post.title} options={{ theme: "dark", count: 2 }} />`,
+    );
+    expect(() => compile(result?.code ?? "", { filename: "component-props.svelte" })).not.toThrow();
   });
 
   it("does not inject metadata into module scripts", async () => {

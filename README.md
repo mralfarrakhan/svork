@@ -1,8 +1,8 @@
 # Svork
 
-Svork provides `svelteMarkdown`, a Svelte 5 preprocessor for writing Markdown files that can include Svelte components, scripts, expressions, raw HTML, and control-flow blocks.
+Svork provides `svelteMarkdown`, a Svelte 5 preprocessor for Markdown files that need a small amount of Svelte interop.
 
-It is intended for blog/content pages where Markdown should stay ergonomic without breaking Svelte syntax such as `{value}`, `<Component />`, `bind:*`, `class:*`, `{#each}`, or module scripts.
+It is intended for blog/content pages where Markdown should stay ergonomic while still allowing frontmatter, scripts, components, and inline expressions like `{post.title}`.
 
 ## Install
 
@@ -25,7 +25,7 @@ export default {
 };
 ```
 
-Then write Markdown with Svelte syntax:
+Then write Markdown with the supported Svelte syntax:
 
 ```svelte
 ---
@@ -36,16 +36,14 @@ author: Budi
 <script lang="ts">
   import Badge from "./Badge.svelte";
 
-  const items = [{ name: "One" }, { name: "Two" }];
+  const label = "New";
 </script>
 
 # {metadata.title}
 
-<Badge text="New" />
+<Badge text={label} />
 
-{#each items as item}
-- {item.name}
-{/each}
+Hello, {metadata.author}.
 ```
 
 Frontmatter is exported as `metadata` from the instance script:
@@ -73,8 +71,9 @@ type SvelteMarkdownOptions = {
 
 - Parses source with Svelte before Markdown processing so Svelte spans can be protected.
 - Processes the document as one Markdown stream, preserving inline components inside paragraphs and list items.
-- Preserves instance scripts, module scripts, Svelte expressions, components, directives, and block boundaries.
+- Preserves instance scripts, module scripts, Svelte components, and normal inline expression tags.
 - Escapes remaining text braces so literal `{` and `}` do not break Svelte compilation.
+- Emits unsupported Svelte syntax as text, including `{#if}`, `{#each}`, `{#snippet}`, `{@html}`, `{@render}`, and lowercase-element directives such as `bind:*` or `class:*`.
 - Falls back to Markdown processing with metadata export when Svelte parsing fails.
 
 ## Development

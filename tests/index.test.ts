@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "svelte/compiler";
+import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypeExpressiveCode from "rehype-expressive-code";
+import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 import { svelteMarkdown } from "../src";
 
@@ -378,6 +380,60 @@ const options = { theme: "dark" };
     expect(result?.code).toContain(`title="&#123;generatedAttribute&#125;"`);
     expect(result?.code).toContain(`>&#123;generatedText&#125;</div>`);
     expect(() => compile(result?.code ?? "", { filename: "late-rehype.svelte" })).not.toThrow();
+  });
+
+  it("keeps rehype heading slugs readable when headings contain svelte syntax", async () => {
+    const source = `---
+title: Plugin Post
+---
+
+<script>
+import Badge from "./Badge.svelte";
+</script>
+
+## Hello {metadata.title} <Badge />
+`;
+
+    const result = await svelteMarkdown({
+      rehypePlugins: [
+        rehypeSlug,
+        [rehypeAutolinkHeadings, { behavior: "wrap" }],
+      ],
+    }).markup?.({
+      content: source,
+      filename: "heading-links.md",
+    });
+
+    expect(result?.code).toContain(`id="hello-metadata-title-badge"`);
+    expect(result?.code).toContain(`href="#hello-metadata-title-badge"`);
+    expect(result?.code).toContain(`Hello {metadata.title} <Badge />`);
+    expect(result?.code).not.toContain("SVELTE_EXPRESSION");
+    expect(result?.code).not.toContain("svork-placeholder");
+    expect(() => compile(result?.code ?? "", { filename: "heading-links.svelte" })).not.toThrow();
+  });
+
+  it("supports remark-gfm footnotes with live expressions and code braces", async () => {
+    const source = `---
+title: Footnote Post
+---
+
+Here is a footnote.[^1]
+
+[^1]: Footnote for {metadata.title} and \`{literal}\`.
+`;
+
+    const result = await svelteMarkdown({
+      remarkPlugins: [remarkGfm],
+    }).markup?.({
+      content: source,
+      filename: "footnotes.md",
+    });
+
+    expect(result?.code).toContain(`data-footnote-ref`);
+    expect(result?.code).toContain(`id="user-content-fn-1"`);
+    expect(result?.code).toContain(`Footnote for {metadata.title}`);
+    expect(result?.code).toContain(`<code>&#123;literal&#125;</code>`);
+    expect(() => compile(result?.code ?? "", { filename: "footnotes.svelte" })).not.toThrow();
   });
 
 });

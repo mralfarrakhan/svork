@@ -21,6 +21,7 @@ type Target = {
 
 type PlaceholderInfo = {
   original: string;
+  replacement: string;
   type: PlaceholderType;
 };
 
@@ -40,6 +41,58 @@ const escapeSvelteText = (value: string) =>
     .replace(/>/g, "&gt;")
     .replace(/\{/g, "&#123;")
     .replace(/\}/g, "&#125;");
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const escapeHtmlAttribute = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const escapeHtmlText = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const getExpressionSurrogate = (source: string) => {
+  const expression = source.slice(1, -1).trim();
+  if (/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(expression)) {
+    return expression.replace(/\./g, " ");
+  }
+
+  const stringMatch = expression.match(/^(['"`])(.+)\1$/);
+  if (stringMatch) return stringMatch[2];
+
+  return "";
+};
+
+const getComponentSurrogate = (source: string) => {
+  if (source.startsWith("</")) return "";
+
+  const match = source.match(/^<([A-Z][\w.$]*)\b/);
+  if (!match) return "";
+
+  return match[1].split(".").filter(Boolean).join(" ");
+};
+
+const getPlaceholderReplacement = (
+  token: string,
+  type: PlaceholderType,
+  original: string,
+) => {
+  if (type !== "Expression" && type !== "ComponentBoundary") return token;
+
+  const surrogate =
+    type === "Expression"
+      ? getExpressionSurrogate(original)
+      : getComponentSurrogate(original);
+
+  return `<svork-placeholder data-svork-id="${escapeHtmlAttribute(token)}">${escapeHtmlText(surrogate)}</svork-placeholder>`;
+};
 
 const isSvelteAttribute = (attr: any) => {
   if (!attr || attr.type !== "Attribute") return true;
@@ -250,7 +303,28 @@ export const svelteMarkdown = (
         }
 
         for (const [placeholder, info] of placeholderMap.entries()) {
-          const escPlaceholder = placeholder.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
+          const escPlaceholder = escapeRegExp(placeholder);
+          const markerPattern = `<svork-placeholder\\s+data-svork-id=(["'])${escPlaceholder}\\1[^>]*>[\\s\\S]*?<\\/svork-placeholder>`;
+          const markerRegex = new RegExp(markerPattern, "g");
+
+          if (
+            info.type === "ComponentBoundary" ||
+            info.type === "InstanceScript" ||
+            info.type === "ModuleScript" ||
+            info.type === "EscapedText"
+          ) {
+            const pMarkerRegex = new RegExp(`<p>\\s*${markerPattern}\\s*</p>`, "g");
+            if (pMarkerRegex.test(restored)) {
+              restored = restored.replace(pMarkerRegex, () => info.original);
+              continue;
+            }
+          }
+
+          if (markerRegex.test(restored)) {
+            restored = restored.replace(markerRegex, () => info.original);
+            continue;
+          }
+
           // Strip paragraph wrappers added by the markdown compiler for scripts and component boundaries.
           if (
             info.type === "InstanceScript" ||
@@ -258,7 +332,8 @@ export const svelteMarkdown = (
             info.type === "ComponentBoundary" ||
             info.type === "EscapedText"
           ) {
-            const pRegex = new RegExp(`<p>\\s*${escPlaceholder}\\s*</p>`, "g");
+            const escapedReplacement = escapeRegExp(info.replacement);
+            const pRegex = new RegExp(`<p>\\s*${escapedReplacement}\\s*</p>`, "g");
             if (pRegex.test(restored)) {
               restored = restored.replace(pRegex, () => info.original);
               continue;
@@ -391,12 +466,17 @@ export const svelteMarkdown = (
         // Use pure alphanumeric identifiers to prevent Markdown compilers from parsing double underscores '__' as bold
         const id = genId();
         const placeholder = `SVELTE_${target.type.toUpperCase()}_${id}_${i}_SVELTE`;
+        const replacement = getPlaceholderReplacement(
+          placeholder,
+          target.type,
+          original,
+        );
 
-        placeholderMap.set(placeholder, { original, type: target.type });
+        placeholderMap.set(placeholder, { original, replacement, type: target.type });
 
         substitutedString =
           substitutedString.slice(0, target.start) +
-          placeholder +
+          replacement +
           substitutedString.slice(target.end);
       }
 

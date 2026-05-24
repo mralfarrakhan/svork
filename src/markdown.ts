@@ -244,7 +244,7 @@ export const svelteMarkdown = (
   options?: SvelteMarkdownOptions,
 ): PreprocessorGroup => {
   const hasWantedExt = (s: string) =>
-    (options?.extensions ?? [".md"]).some((e) => s.endsWith(e));
+    (options?.extensions ?? [".md"]).some((e) => s.endsWith(e.trim()));
 
   const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
@@ -293,19 +293,19 @@ export const svelteMarkdown = (
         const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
         let hasInstanceScript = false;
 
-        for (const info of placeholderMap.values()) {
-          if (info.type === "InstanceScript") {
-            const scriptTagMatch = info.original.match(/^<script[^>]*>/);
-            if (scriptTagMatch) {
-              const injectIndex = scriptTagMatch[0].length;
-              info.original =
-                info.original.slice(0, injectIndex) +
-                metadataString +
-                info.original.slice(injectIndex);
-              hasInstanceScript = true;
-            }
-          }
-        }
+        // for (const info of placeholderMap.values()) {
+        //   if (info.type === "InstanceScript") {
+        //     const scriptTagMatch = info.original.match(/^<script[^>]*>/);
+        //     if (scriptTagMatch) {
+        //       const injectIndex = scriptTagMatch[0].length;
+        //       info.original =
+        //         info.original.slice(0, injectIndex) +
+        //         metadataString +
+        //         info.original.slice(injectIndex);
+        //       hasInstanceScript = true;
+        //     }
+        //   }
+        // }
 
         for (const [placeholder, info] of placeholderMap.entries()) {
           const escPlaceholder = escapeRegExp(placeholder);
@@ -380,7 +380,7 @@ export const svelteMarkdown = (
 
         if (!hasInstanceScript) {
           restored =
-            `<script lang="ts">${metadataString}</script>\n` + restored;
+            `<script module lang="ts">${metadataString}</script>\n` + restored;
         }
 
         return restored;

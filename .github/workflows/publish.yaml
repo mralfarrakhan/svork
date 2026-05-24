@@ -1,4 +1,4 @@
-name: Publish package to GitHub Packages
+name: Publish package
 on:
   push:
     tags:
@@ -11,13 +11,19 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v3
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '>=24'
-          registry-url: 'https://npm.pkg.github.com'
+          bun-version: 1.3.3
       - name: Install dependencies
-        run: npm i
-      - name: Publish package
-        run: npm publish --access restricted
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        run: bun run test
+      - name: Run lint
+        run: bun run lint
+        continue-on-error: true
+      - name: Build and pack package
+        run: bun pm pack
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: mralfarrakhan-svork-*.tgz

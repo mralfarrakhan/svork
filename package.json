@@ -38,7 +38,7 @@
     "typecheck": "tsc --noEmit",
     "release": "bumpp",
     "prepublishOnly": "tsdown",
-    "prepare": "tsdown --dst"
+    "prepare": "bunx tsdown --dst"
   },
   "devDependencies": {
     "@shikijs/rehype": "^4.1.0",

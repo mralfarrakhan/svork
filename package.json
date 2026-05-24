@@ -1,5 +1,5 @@
 {
-  "name": "svork",
+  "name": "@mralfarrakhan/svork",
   "type": "module",
   "version": "0.2.4",
   "description": "Svelte utilities for writing blog",

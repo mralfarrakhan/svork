@@ -7,7 +7,7 @@ It is intended for blog/content pages where Markdown should stay ergonomic while
 ## Install
 
 ```sh
-bun add svork
+bun add -D @mralfarrakhan/svork
 ```
 
 Svork has a peer dependency on Svelte 5.

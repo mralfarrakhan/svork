@@ -4,7 +4,7 @@
   "version": "0.5.0",
   "description": "Svelte utilities for writing blog",
   "author": "mralfarrakhan <alfarrakhan@gmail.com",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "https://github.com/mralfarrakhan/svork.git"
@@ -37,7 +37,7 @@
     "test": "vitest --test-timeout=15000",
     "typecheck": "tsc --noEmit",
     "release": "bumpp",
-    "prepublishOnly": "tsdown",
+    "prepublishOnly": "bunx tsdown",
     "prepare": "bunx tsdown --dst"
   },
   "devDependencies": {
@@ -77,5 +77,8 @@
     "unist-util-stringify-position": "4.0.0",
     "vfile": "6.0.3",
     "vfile-message": "4.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

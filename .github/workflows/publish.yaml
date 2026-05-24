@@ -24,7 +24,7 @@ jobs:
           registry-url: https://npm.pkg.github.com
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --fronzen-lockfile
 
       - name: Lint
         run: bun run lint

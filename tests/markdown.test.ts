@@ -60,6 +60,39 @@ This is a test file
     expect(() => compile(result?.code ?? "", { filename: "exact.svelte" })).not.toThrow();
   });
 
+  it("prepends script module for metadata when only an instance script is present", async () => {
+    const source = `---
+title: My Article
+---
+
+<script lang="ts">
+import Card from './Card.svelte';
+const count = 0;
+</script>
+
+# {count}
+`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "instance-only.md",
+    });
+
+    // Metadata lives in its own <script module> — a proper ES module named export,
+    // accessible via import.meta.glob without instantiating the component.
+    expect(result?.code).toContain(
+      `<script module lang="ts">\nexport const metadata = {"title":"My Article"};\n</script>`,
+    );
+    // Instance script is preserved separately with its imports intact.
+    expect(result?.code).toContain(
+      `<script lang="ts">\nimport Card from './Card.svelte';\nconst count = 0;\n</script>`,
+    );
+    // Cross-contamination guards.
+    expect(result?.code).not.toContain(`<script module lang="ts">\nimport Card`);
+    expect(result?.code).not.toContain(`<script lang="ts">\nexport const metadata`);
+    expect(() => compile(result?.code ?? "", { filename: "instance-only.svelte" })).not.toThrow();
+  });
+
   it("component", async () => {
     const source = `<script>
 import Budi from '../Budi.svelte';
@@ -191,7 +224,7 @@ const post = { title: "Hello" };
     expect(() => compile(result?.code ?? "", { filename: "component-props.svelte" })).not.toThrow();
   });
 
-  it("does not inject metadata into module scripts", async () => {
+  it("injects metadata into existing module scripts", async () => {
     const source = `---
 title: Module Post
 ---
@@ -208,15 +241,10 @@ export const prerender = true;
       filename: "module.md",
     });
 
-    expect(result?.code?.startsWith(
-      `<script lang="ts">\nexport const metadata = {"title":"Module Post"};\n</script>`,
-    )).toBe(true);
     expect(result?.code).toContain(
-      `<script module>\nexport const prerender = true;\n</script>`,
+      `<script module>\nexport const metadata = {"title":"Module Post"};\n\nexport const prerender = true;\n</script>`,
     );
-    expect(result?.code).not.toContain(
-      `<script module>\nexport const metadata = {"title":"Module Post"};`,
-    );
+    expect(result?.code).not.toContain(`<script lang="ts">`);
     expect(() => compile(result?.code ?? "", { filename: "module.svelte" })).not.toThrow();
   });
 
@@ -237,15 +265,10 @@ export const csr = false;
       filename: "context-module.md",
     });
 
-    expect(result?.code?.startsWith(
-      `<script lang="ts">\nexport const metadata = {"title":"Context Module Post"};\n</script>`,
-    )).toBe(true);
     expect(result?.code).toContain(
-      `<script context='module'>\nexport const csr = false;\n</script>`,
+      `<script context='module'>\nexport const metadata = {"title":"Context Module Post"};\n\nexport const csr = false;\n</script>`,
     );
-    expect(result?.code).not.toContain(
-      `<script context='module'>\nexport const metadata = {"title":"Context Module Post"};`,
-    );
+    expect(result?.code).not.toContain(`<script lang="ts">`);
     expect(() =>
       compile(result?.code ?? "", { filename: "context-module.svelte" }),
     ).not.toThrow();
@@ -485,6 +508,29 @@ And a plain expression: {greeting}
 
     // 5. Final output is valid Svelte
     expect(() => compile(result?.code ?? "", { filename: "shiki.svelte" })).not.toThrow();
+  });
+
+  it("merges vfile.data.fm injected by remark plugins into exported metadata", async () => {
+    const remarkInjectFm = () => (_tree: any, file: any) => {
+      file.data.fm = { ...(file.data.fm ?? {}), readingTime: "5 min read" };
+    };
+
+    const source = `---
+title: My Post
+---
+
+This is a test article with enough words to measure.
+`;
+
+    const result = await svelteMarkdown({
+      remarkPlugins: [remarkInjectFm],
+    }).markup?.({
+      content: source,
+      filename: "reading-time.md",
+    });
+
+    expect(result?.code).toContain(`export const metadata = {"title":"My Post","readingTime":"5 min read"};`);
+    expect(() => compile(result?.code ?? "", { filename: "reading-time.svelte" })).not.toThrow();
   });
 
 });

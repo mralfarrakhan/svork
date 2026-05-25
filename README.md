@@ -21,7 +21,7 @@ import { svelteMarkdown } from "svork";
 
 export default {
   preprocess: [svelteMarkdown()],
-  extensions: [".svelte", ".md"],
+  extensions: [".svx", ".md"],
 };
 ```
 

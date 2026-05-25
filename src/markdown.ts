@@ -283,31 +283,35 @@ export const svelteMarkdown = (
         markdownSource: string,
         placeholderMap = new Map<string, PlaceholderInfo>(),
       ) => {
-        let compiled = String(await mdCompiler.process(markdownSource));
+        const vfile = await mdCompiler.process(markdownSource);
+        let compiled = String(vfile);
         // Revert numeric entity double-escaping produced by stringifier (e.g. &amp;#123; or &#x26;#123;) back to &#123;/&#125;.
         compiled = compiled
           .replace(/(&amp;#123;|&#x26;#123;)/g, "&#123;")
           .replace(/(&amp;#125;|&#x26;#125;)/g, "&#125;");
         let restored = compiled;
 
-        const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
-        let hasInstanceScript = false;
+        // Merge any fields injected into vfile.data.fm by remark/rehype plugins (e.g. reading time).
+        if (vfile.data?.fm && typeof vfile.data.fm === "object") {
+          metadata = { ...metadata, ...(vfile.data.fm as Record<string, any>) };
+        }
 
-        // for (const info of placeholderMap.values()) {
-        //   if (info.type === "InstanceScript") {
-        //     const scriptTagMatch = info.original.match(/^<script[^>]*>/);
-        //     if (scriptTagMatch) {
-        //       const injectIndex = scriptTagMatch[0].length;
-        //       info.original =
-        //         info.original.slice(0, injectIndex) +
-        //         metadataString +
-        //         info.original.slice(injectIndex);
-        //       hasInstanceScript = true;
-        //     }
-        //   }
-        // }
+        const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
+        let hasModuleScript = false;
 
         for (const [placeholder, info] of placeholderMap.entries()) {
+          if (info.type === "ModuleScript") {
+            const scriptTagMatch = info.original.match(/^<script[^>]*>/);
+            if (scriptTagMatch) {
+              const injectIndex = scriptTagMatch[0].length;
+              info.original =
+                info.original.slice(0, injectIndex) +
+                metadataString +
+                info.original.slice(injectIndex);
+            }
+            hasModuleScript = true;
+          }
+
           const escPlaceholder = escapeRegExp(placeholder);
           const markerPattern = `<svork-placeholder\\s+data-svork-id=(["'])${escPlaceholder}\\1[^>]*>[\\s\\S]*?<\\/svork-placeholder>`;
           const markerRegex = new RegExp(markerPattern, "g");
@@ -378,7 +382,7 @@ export const svelteMarkdown = (
           );
         }
 
-        if (!hasInstanceScript) {
+        if (!hasModuleScript) {
           restored =
             `<script module lang="ts">${metadataString}</script>\n` + restored;
         }

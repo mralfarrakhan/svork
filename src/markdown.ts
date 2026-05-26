@@ -188,9 +188,18 @@ const escapeSvelteTextBraces = (value: string) =>
 // Escape braces in raw HTML strings produced by user rehype plugins.
 // Skips <script> and <style> blocks so their brace syntax (JS/CSS) is preserved.
 const escapeRawNodeBraces = (html: string): string => {
+  // Escape < and > inside quoted attribute values first so that e.g. a <style>
+  // tag embedded in a data-code attribute value is not mistaken for a real
+  // style block by the regex below (which would then skip brace-escaping inside it).
+  const withSafeAttrs = html.replace(/"([^"]*)"/g, (match, val) =>
+    val.includes("<")
+      ? `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`
+      : match,
+  );
+
   const scriptStyleRegex =
     /(<(?:script|style)\b[\s\S]*?<\/(?:script|style)\s*>)/gi;
-  return html
+  return withSafeAttrs
     .split(scriptStyleRegex)
     .map((part, i) => (i % 2 === 1 ? part : escapeSvelteTextBraces(part)))
     .join("");

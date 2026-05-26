@@ -1,7 +1,7 @@
 {
   "name": "@mralfarrakhan/svork",
   "type": "module",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Svelte utilities for writing blog",
   "author": "mralfarrakhan <alfarrakhan@gmail.com",
   "license": "AGPL-3.0-or-later",

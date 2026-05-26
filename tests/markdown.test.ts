@@ -44,9 +44,7 @@ This is a test file
 
     // We verify the important structural characteristics of the generated output:
     // 1. Script block correctly preserved and metadata injected
-    expect(result?.code).toContain(
-      `export const metadata = {"title":"Boo Dee","author":"Budi"};`,
-    );
+    expect(result?.code).toContain(`export const metadata = {"title":"Boo Dee","author":"Budi"};`);
     expect(result?.code).toContain(`import Budi from 'Budi.svelte';`);
 
     // 2. Expressions preserved correctly
@@ -59,9 +57,7 @@ This is a test file
     // 4. Svelte block boundaries are emitted as text, not preserved as Svelte syntax.
     expect(result?.code).toContain(`&#123;#each items as item&#125;`);
     expect(result?.code).toContain(`&#123;/each&#125;`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "exact.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "exact.svelte" })).not.toThrow();
   });
 
   it("prepends script module for metadata when only an instance script is present", async () => {
@@ -92,15 +88,9 @@ const count = 0;
       `<script lang="ts">\nimport Card from './Card.svelte';\nconst count = 0;\n</script>`,
     );
     // Cross-contamination guards.
-    expect(result?.code).not.toContain(
-      `<script module lang="ts">\nimport Card`,
-    );
-    expect(result?.code).not.toContain(
-      `<script lang="ts">\nexport const metadata`,
-    );
-    expect(() =>
-      compile(result?.code ?? "", { filename: "instance-only.svelte" }),
-    ).not.toThrow();
+    expect(result?.code).not.toContain(`<script module lang="ts">\nimport Card`);
+    expect(result?.code).not.toContain(`<script lang="ts">\nexport const metadata`);
+    expect(() => compile(result?.code ?? "", { filename: "instance-only.svelte" })).not.toThrow();
   });
 
   it("component", async () => {
@@ -121,22 +111,18 @@ This is {budi}
     });
 
     expect(result?.code).toContain(`export const metadata = {};`);
-    expect(result?.code).toContain(
-      `<Budi name={budi}>\nThis is {budi}\n</Budi>`,
-    );
+    expect(result?.code).toContain(`<Budi name={budi}>\nThis is {budi}\n</Budi>`);
   });
 
   it("nested expressions", async () => {
     const source = `The configuration is { { theme: 'dark', active: true } }`;
-
+    
     const result = await svelteMarkdown().markup?.({
       content: source,
       filename: "nested.md",
     });
 
-    expect(result?.code).toContain(
-      `The configuration is { { theme: 'dark', active: true } }`,
-    );
+    expect(result?.code).toContain(`The configuration is { { theme: 'dark', active: true } }`);
   });
 
   it("inline components in lists", async () => {
@@ -148,9 +134,7 @@ This is {budi}
     });
 
     // The list is processed as a single continuous block, preserving the inline component without fragmentation!
-    expect(result?.code).toContain(
-      `<ul>\n<li>Item with <Badge text="New" /> inline component.</li>\n</ul>`,
-    );
+    expect(result?.code).toContain(`<ul>\n<li>Item with <Badge text="New" /> inline component.</li>\n</ul>`);
   });
 
   it("treats svelte directives on regular elements as text", async () => {
@@ -172,12 +156,8 @@ const save = () => {};
     expect(result?.code).toContain(
       `&lt;input bind:value=&#123;name&#125; class:active=&#123;ok&#125; on:click=&#123;save&#125; /&gt;`,
     );
-    expect(result?.code).toContain(
-      `&lt;div class=&#123;name&#125;&gt;Hello&lt;/div&gt;`,
-    );
-    expect(() =>
-      compile(result?.code ?? "", { filename: "directives.svelte" }),
-    ).not.toThrow();
+    expect(result?.code).toContain(`&lt;div class=&#123;name&#125;&gt;Hello&lt;/div&gt;`);
+    expect(() => compile(result?.code ?? "", { filename: "directives.svelte" })).not.toThrow();
   });
 
   it("preserves inline expressions inside plain html text", async () => {
@@ -194,9 +174,7 @@ const name = "Budi";
     });
 
     expect(result?.code).toContain(`<div class="note">Hello {name}</div>`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "plain-html.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "plain-html.svelte" })).not.toThrow();
   });
 
   it("treats svelte control and special tags as text", async () => {
@@ -222,9 +200,7 @@ const content = "<strong>Hi</strong>";
     expect(result?.code).toContain(`&#123;:else&#125;`);
     expect(result?.code).toContain(`&#123;@render child()&#125;`);
     expect(result?.code).toContain(`&#123;/if&#125;`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "control.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "control.svelte" })).not.toThrow();
   });
 
   it("preserves component props with valid js expressions", async () => {
@@ -245,9 +221,7 @@ const post = { title: "Hello" };
     expect(result?.code).toContain(
       `<Card title={post.title} options={{ theme: "dark", count: 2 }} />`,
     );
-    expect(() =>
-      compile(result?.code ?? "", { filename: "component-props.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "component-props.svelte" })).not.toThrow();
   });
 
   it("injects metadata into existing module scripts", async () => {
@@ -271,9 +245,7 @@ export const prerender = true;
       `<script module>\nexport const metadata = {"title":"Module Post"};\n\nexport const prerender = true;\n</script>`,
     );
     expect(result?.code).not.toContain(`<script lang="ts">`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "module.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "module.svelte" })).not.toThrow();
   });
 
   it("treats single-quoted context module scripts as module scripts", async () => {
@@ -319,9 +291,7 @@ Text { only
       `export const metadata = {"title":"Fallback Post"};`,
     );
     expect(result?.code).toContain(`<p>Text &#123; only</p>`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "fallback.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "fallback.svelte" })).not.toThrow();
   });
 
   it("escapes braces inside code fences", async () => {
@@ -333,9 +303,7 @@ Text { only
     });
 
     expect(result?.code).toContain("const a = &#123; test: true &#125;");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "code.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "code.svelte" })).not.toThrow();
   });
 
   it("treats inline code as markdown code, not svelte syntax", async () => {
@@ -354,13 +322,9 @@ Use \`<Card value={x} />\` as text.
       filename: "inline-code.md",
     });
 
-    expect(result?.code).toContain(
-      `<code>&#x3C;Card value=&#123;x&#125; /></code>`,
-    );
+    expect(result?.code).toContain(`<code>&#x3C;Card value=&#123;x&#125; /></code>`);
     expect(result?.code).toContain(`<Card value={x} />`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "inline-code.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "inline-code.svelte" })).not.toThrow();
   });
 
   it("preserves braces inside script tags", async () => {
@@ -372,9 +336,7 @@ Use \`<Card value={x} />\` as text.
     });
 
     expect(result?.code).toContain("const x = { a: 1 };");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "script.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "script.svelte" })).not.toThrow();
   });
 
   it("does not collide with literal placeholder-like tokens", async () => {
@@ -417,9 +379,7 @@ const options = { theme: "dark" };
     expect(result?.code).toContain("expressive-code");
     expect(result?.code).toContain("&#123;notSvelte&#125;");
     expect(result?.code).toContain("&#123; theme:");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "plugins.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "plugins.svelte" })).not.toThrow();
   });
 
   it("escapes braces generated by late rehype plugins", async () => {
@@ -443,9 +403,7 @@ const options = { theme: "dark" };
 
     expect(result?.code).toContain(`title="&#123;generatedAttribute&#125;"`);
     expect(result?.code).toContain(`>&#123;generatedText&#125;</div>`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "late-rehype.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "late-rehype.svelte" })).not.toThrow();
   });
 
   it("keeps rehype heading slugs readable when headings contain svelte syntax", async () => {
@@ -475,9 +433,7 @@ import Badge from "./Badge.svelte";
     expect(result?.code).toContain(`Hello {metadata.title} <Badge />`);
     expect(result?.code).not.toContain("SVELTE_EXPRESSION");
     expect(result?.code).not.toContain("svork-placeholder");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "heading-links.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "heading-links.svelte" })).not.toThrow();
   });
 
   it("supports remark-gfm footnotes with live expressions and code braces", async () => {
@@ -501,9 +457,7 @@ Here is a footnote.[^1]
     expect(result?.code).toContain(`id="user-content-fn-1"`);
     expect(result?.code).toContain(`Footnote for {metadata.title}`);
     expect(result?.code).toContain(`<code>&#123;literal&#125;</code>`);
-    expect(() =>
-      compile(result?.code ?? "", { filename: "footnotes.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "footnotes.svelte" })).not.toThrow();
   });
 
   it("works with @shikijs/rehype: highlights code and escapes generated braces", async () => {
@@ -530,7 +484,9 @@ And a plain expression: {greeting}
 `;
 
     const result = await svelteMarkdown({
-      rehypePlugins: [[rehypeShiki, { theme: "github-light" }]],
+      rehypePlugins: [
+        [rehypeShiki, { theme: "github-light" }],
+      ],
     }).markup?.({ content: source, filename: "shiki.md" });
 
     // 1. Shiki actually ran: code block is wrapped in highlighted spans
@@ -547,72 +503,11 @@ And a plain expression: {greeting}
     expect(result?.code).toContain("{greeting}");
 
     // 4. Script block and metadata survive
-    expect(result?.code).toContain(
-      `export const metadata = {"title":"Shiki Post"};`,
-    );
+    expect(result?.code).toContain(`export const metadata = {"title":"Shiki Post"};`);
     expect(result?.code).toContain(`const greeting = "Hello";`);
 
     // 5. Final output is valid Svelte
-    expect(() =>
-      compile(result?.code ?? "", { filename: "shiki.svelte" }),
-    ).not.toThrow();
-  });
-
-  it("escapes braces in raw hast nodes produced by user rehype plugins", async () => {
-    const rehypeRawNodePlugin = () => (tree: any) => {
-      tree.children.push({
-        type: "raw",
-        value: `<div class="gen">{{.Template}} and {variable}</div>`,
-      });
-    };
-
-    const result = await svelteMarkdown({
-      rehypePlugins: [rehypeRawNodePlugin],
-    }).markup?.({ content: "# Hello", filename: "raw-nodes.md" });
-
-    expect(result?.code).toContain("&#123;&#123;.Template&#125;&#125;");
-    expect(result?.code).toContain("&#123;variable&#125;");
-    expect(result?.code).not.toContain("{{.Template}}");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "raw-nodes.svelte" }),
-    ).not.toThrow();
-  });
-
-  it("escapes braces in html code blocks with template syntax via rehype-expressive-code", async () => {
-    const source = `\`\`\`html
-<!--layout/index.html-->
-<html>
-  <head>
-    <title>{{.Greeting}}</title>
-    <style>
-      .centered {
-        margin-left: auto;
-        margin-right: auto;
-        width: 100%;
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div>
-      <h1 class="centered">{{.Greeting}}</h1>
-      <p class="centered">You are the #{{.Counter}} visitor!</p>
-    </div>
-  </body>
-</html>
-\`\`\``;
-
-    const result = await svelteMarkdown({
-      rehypePlugins: [[rehypeExpressiveCode, { themes: ["github-light"] }]],
-    }).markup?.({ content: source, filename: "go-template.md" });
-
-    expect(result?.code).toContain("expressive-code");
-    expect(result?.code).toContain("&#123;&#123;.Greeting&#125;&#125;");
-    expect(result?.code).toContain("&#123;&#123;.Counter&#125;&#125;");
-    expect(result?.code).not.toContain("{{.Greeting}}");
-    expect(() =>
-      compile(result?.code ?? "", { filename: "go-template.svelte" }),
-    ).not.toThrow();
+    expect(() => compile(result?.code ?? "", { filename: "shiki.svelte" })).not.toThrow();
   });
 
   it("merges vfile.data.fm injected by remark plugins into exported metadata", async () => {
@@ -634,11 +529,8 @@ This is a test article with enough words to measure.
       filename: "reading-time.md",
     });
 
-    expect(result?.code).toContain(
-      `export const metadata = {"title":"My Post","readingTime":"5 min read"};`,
-    );
-    expect(() =>
-      compile(result?.code ?? "", { filename: "reading-time.svelte" }),
-    ).not.toThrow();
+    expect(result?.code).toContain(`export const metadata = {"title":"My Post","readingTime":"5 min read"};`);
+    expect(() => compile(result?.code ?? "", { filename: "reading-time.svelte" })).not.toThrow();
   });
+
 });

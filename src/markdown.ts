@@ -185,26 +185,6 @@ const maskMarkdownCodeForSvelteParse = (source: string) => {
 const escapeSvelteTextBraces = (value: string) =>
   value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
 
-// Escape braces in raw HTML strings produced by user rehype plugins.
-// Skips <script> and <style> blocks so their brace syntax (JS/CSS) is preserved.
-const escapeRawNodeBraces = (html: string): string => {
-  // Escape < and > inside quoted attribute values first so that e.g. a <style>
-  // tag embedded in a data-code attribute value is not mistaken for a real
-  // style block by the regex below (which would then skip brace-escaping inside it).
-  const withSafeAttrs = html.replace(/"([^"]*)"/g, (match, val) =>
-    val.includes("<")
-      ? `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`
-      : match,
-  );
-
-  const scriptStyleRegex =
-    /(<(?:script|style)\b[\s\S]*?<\/(?:script|style)\s*>)/gi;
-  return withSafeAttrs
-    .split(scriptStyleRegex)
-    .map((part, i) => (i % 2 === 1 ? part : escapeSvelteTextBraces(part)))
-    .join("");
-};
-
 // Rehype plugin: escape leftover braces after user plugins have generated their HTML.
 function escapeBracesPlugin() {
   return (tree: any) => {
@@ -228,11 +208,6 @@ function escapeBracesPlugin() {
       if (!node) return;
       if (node.type === "element") {
         escapeProperties(node.properties);
-      }
-
-      if (node.type === "raw" && typeof node.value === "string") {
-        node.value = escapeRawNodeBraces(node.value);
-        return;
       }
 
       if (node.type === "text") {
@@ -314,14 +289,6 @@ export const svelteMarkdown = (
         compiled = compiled
           .replace(/(&amp;#123;|&#x26;#123;)/g, "&#123;")
           .replace(/(&amp;#125;|&#x26;#125;)/g, "&#125;");
-        // Escape < > { } inside attribute values so Svelte's template parser does not
-        // misinterpret embedded HTML tags (e.g. <style> in data-code) or brace expressions.
-        // Browsers decode HTML entities when reading attributes, so clipboard/DOM access is unaffected.
-        compiled = compiled.replace(/"([^"]*)"/g, (match, val) => {
-          if (!val.includes("<") && !val.includes("{") && !val.includes("}"))
-            return match;
-          return `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\{/g, "&#123;").replace(/\}/g, "&#125;")}"`;
-        });
         let restored = compiled;
 
         // Merge any fields injected into vfile.data.fm by remark/rehype plugins (e.g. reading time).

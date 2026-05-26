@@ -314,6 +314,14 @@ export const svelteMarkdown = (
         compiled = compiled
           .replace(/(&amp;#123;|&#x26;#123;)/g, "&#123;")
           .replace(/(&amp;#125;|&#x26;#125;)/g, "&#125;");
+        // Escape < > { } inside attribute values so Svelte's template parser does not
+        // misinterpret embedded HTML tags (e.g. <style> in data-code) or brace expressions.
+        // Browsers decode HTML entities when reading attributes, so clipboard/DOM access is unaffected.
+        compiled = compiled.replace(/"([^"]*)"/g, (match, val) => {
+          if (!val.includes("<") && !val.includes("{") && !val.includes("}"))
+            return match;
+          return `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\{/g, "&#123;").replace(/\}/g, "&#125;")}"`;
+        });
         let restored = compiled;
 
         // Merge any fields injected into vfile.data.fm by remark/rehype plugins (e.g. reading time).

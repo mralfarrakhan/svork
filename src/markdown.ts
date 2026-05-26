@@ -93,7 +93,8 @@ const getPlaceholderReplacement = (
 };
 
 const isSvelteAttribute = (attr: any) => {
-  if (!attr || attr.type !== "Attribute") return true;
+  if (!attr) return false;
+  if (attr.type !== "Attribute") return true;
   if (Array.isArray(attr.value)) {
     return attr.value.some((valueNode: any) => valueNode?.type !== "Text");
   }
@@ -191,11 +192,17 @@ const escapeRawNodeBraces = (html: string): string => {
   // Escape < and > inside quoted attribute values first so that e.g. a <style>
   // tag embedded in a data-code attribute value is not mistaken for a real
   // style block by the regex below (which would then skip brace-escaping inside it).
-  const withSafeAttrs = html.replace(/"([^"]*)"/g, (match, val) =>
-    val.includes("<")
-      ? `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`
-      : match,
-  );
+  const withSafeAttrs = html
+    .replace(/"([^"]*)"/g, (match, val) =>
+      val.includes("<")
+        ? `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`
+        : match,
+    )
+    .replace(/'([^']*)'/g, (match, val) =>
+      val.includes("<")
+        ? `'${val.replace(/</g, "&lt;").replace(/>/g, "&gt;")}'`
+        : match,
+    );
 
   const scriptStyleRegex =
     /(<(?:script|style)\b[\s\S]*?<\/(?:script|style)\s*>)/gi;
@@ -317,11 +324,19 @@ export const svelteMarkdown = (
         // Escape < > { } inside attribute values so Svelte's template parser does not
         // misinterpret embedded HTML tags (e.g. <style> in data-code) or brace expressions.
         // Browsers decode HTML entities when reading attributes, so clipboard/DOM access is unaffected.
-        compiled = compiled.replace(/"([^"]*)"/g, (match, val) => {
-          if (!val.includes("<") && !val.includes("{") && !val.includes("}"))
-            return match;
-          return `"${val.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\{/g, "&#123;").replace(/\}/g, "&#125;")}"`;
-        });
+        const escapeAttrVal = (val: string) =>
+          val.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+        compiled = compiled
+          .replace(/"([^"]*)"/g, (match, val) => {
+            if (!val.includes("<") && !val.includes("{") && !val.includes("}"))
+              return match;
+            return `"${escapeAttrVal(val)}"`;
+          })
+          .replace(/'([^']*)'/g, (match, val) => {
+            if (!val.includes("<") && !val.includes("{") && !val.includes("}"))
+              return match;
+            return `'${escapeAttrVal(val)}'`;
+          });
         let restored = compiled;
 
         // Merge any fields injected into vfile.data.fm by remark/rehype plugins (e.g. reading time).

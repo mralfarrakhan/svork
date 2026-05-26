@@ -510,6 +510,59 @@ And a plain expression: {greeting}
     expect(() => compile(result?.code ?? "", { filename: "shiki.svelte" })).not.toThrow();
   });
 
+  it("escapes braces in raw hast nodes produced by user rehype plugins", async () => {
+    const rehypeRawNodePlugin = () => (tree: any) => {
+      tree.children.push({
+        type: "raw",
+        value: `<div class="gen">{{.Template}} and {variable}</div>`,
+      });
+    };
+
+    const result = await svelteMarkdown({
+      rehypePlugins: [rehypeRawNodePlugin],
+    }).markup?.({ content: "# Hello", filename: "raw-nodes.md" });
+
+    expect(result?.code).toContain("&#123;&#123;.Template&#125;&#125;");
+    expect(result?.code).toContain("&#123;variable&#125;");
+    expect(result?.code).not.toContain("{{.Template}}");
+    expect(() => compile(result?.code ?? "", { filename: "raw-nodes.svelte" })).not.toThrow();
+  });
+
+  it("escapes braces in html code blocks with template syntax via rehype-expressive-code", async () => {
+    const source = `\`\`\`html
+<!--layout/index.html-->
+<html>
+  <head>
+    <title>{{.Greeting}}</title>
+    <style>
+      .centered {
+        margin-left: auto;
+        margin-right: auto;
+        width: 100%;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1 class="centered">{{.Greeting}}</h1>
+      <p class="centered">You are the #{{.Counter}} visitor!</p>
+    </div>
+  </body>
+</html>
+\`\`\``;
+
+    const result = await svelteMarkdown({
+      rehypePlugins: [[rehypeExpressiveCode, { themes: ["github-light"] }]],
+    }).markup?.({ content: source, filename: "go-template.md" });
+
+    expect(result?.code).toContain("expressive-code");
+    expect(result?.code).toContain("&#123;&#123;.Greeting&#125;&#125;");
+    expect(result?.code).toContain("&#123;&#123;.Counter&#125;&#125;");
+    expect(result?.code).not.toContain("{{.Greeting}}");
+    expect(() => compile(result?.code ?? "", { filename: "go-template.svelte" })).not.toThrow();
+  });
+
   it("merges vfile.data.fm injected by remark plugins into exported metadata", async () => {
     const remarkInjectFm = () => (_tree: any, file: any) => {
       file.data.fm = { ...(file.data.fm ?? {}), readingTime: "5 min read" };

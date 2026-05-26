@@ -185,6 +185,17 @@ const maskMarkdownCodeForSvelteParse = (source: string) => {
 const escapeSvelteTextBraces = (value: string) =>
   value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
 
+// Escape braces in raw HTML strings produced by user rehype plugins.
+// Skips <script> and <style> blocks so their brace syntax (JS/CSS) is preserved.
+const escapeRawNodeBraces = (html: string): string => {
+  const scriptStyleRegex =
+    /(<(?:script|style)\b[\s\S]*?<\/(?:script|style)\s*>)/gi;
+  return html
+    .split(scriptStyleRegex)
+    .map((part, i) => (i % 2 === 1 ? part : escapeSvelteTextBraces(part)))
+    .join("");
+};
+
 // Rehype plugin: escape leftover braces after user plugins have generated their HTML.
 function escapeBracesPlugin() {
   return (tree: any) => {
@@ -208,6 +219,11 @@ function escapeBracesPlugin() {
       if (!node) return;
       if (node.type === "element") {
         escapeProperties(node.properties);
+      }
+
+      if (node.type === "raw" && typeof node.value === "string") {
+        node.value = escapeRawNodeBraces(node.value);
+        return;
       }
 
       if (node.type === "text") {

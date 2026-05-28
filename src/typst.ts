@@ -1,4 +1,5 @@
 import type { PreprocessorGroup } from "svelte/compiler";
+import type { Root } from "hast";
 import { unified, type PluggableList } from "unified";
 import rehypeStringify from "rehype-stringify";
 import { VFile } from "vfile";
@@ -72,8 +73,16 @@ export const svelteTypst = (options?: SvelteTypstOptions): PreprocessorGroup => 
       }
       const htmlOutput = htmlExec.result!;
 
-      // Parse body HTML into a hast tree (avoids the noisy native .hast() call)
-      const bodyRoot = fromParse5(parseFragment(htmlOutput.body()));
+      // Parse body HTML into a hast tree (avoids the noisy native .hast() call).
+      // Typst wraps body content in an outer <div> — unwrap it so headings are
+      // root-level children, which is required for plugins like rehype-sectionize.
+      const parsed = fromParse5(parseFragment(htmlOutput.body())) as Root;
+      const outerDiv = (parsed.children as any[]).find(
+        (c: any) => c.tagName === "div",
+      );
+      const bodyRoot = outerDiv
+        ? { type: "root" as const, children: outerDiv.children as any[] }
+        : parsed;
 
       // 4. Run through rehype plugins and escape braces for Svelte safety
       const vfile = new VFile();

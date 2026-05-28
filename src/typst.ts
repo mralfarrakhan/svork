@@ -1,6 +1,9 @@
 import type { PreprocessorGroup } from "svelte/compiler";
 import { unified, type PluggableList } from "unified";
 import rehypeStringify from "rehype-stringify";
+import { VFile } from "vfile";
+import { parseFragment } from "parse5";
+import { fromParse5 } from "hast-util-from-parse5";
 import { NodeCompiler } from "@myriaddreamin/typst-ts-node-compiler";
 import type { CompileArgs } from "@myriaddreamin/typst-ts-node-compiler";
 import { escapeBracesPlugin, revertDoubleEscapedBraces } from "./shared.js";
@@ -69,19 +72,21 @@ export const svelteTypst = (options?: SvelteTypstOptions): PreprocessorGroup => 
       }
       const htmlOutput = htmlExec.result!;
 
-      // .hast() returns the <html> element; extract body children into a root node
-      const docHast = htmlOutput.hast() as any;
-      const bodyEl = docHast.children?.find((n: any) => n.tagName === "body");
-      const bodyRoot = {
-        type: "root" as const,
-        children: (bodyEl?.children ?? docHast.children ?? []) as any[],
-      };
+      // Parse body HTML into a hast tree (avoids the noisy native .hast() call)
+      const bodyRoot = fromParse5(parseFragment(htmlOutput.body()));
 
       // 4. Run through rehype plugins and escape braces for Svelte safety
-      const transformed = await rehypeProcessor.run(bodyRoot as any);
+      const vfile = new VFile();
+      vfile.data.fm = { ...metadata };
+      const transformed = await rehypeProcessor.run(bodyRoot as any, vfile);
       const html = revertDoubleEscapedBraces(
-        rehypeProcessor.stringify(transformed as any),
+        rehypeProcessor.stringify(transformed as any, vfile),
       );
+
+      // Merge any fields injected into vfile.data.fm by rehype plugins (e.g. reading time)
+      if (vfile.data?.fm && typeof vfile.data.fm === "object") {
+        metadata = { ...metadata, ...(vfile.data.fm as Record<string, any>) };
+      }
 
       // 5. Wrap in a Svelte component with exported metadata
       const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;

@@ -111,6 +111,30 @@ Another paragraph.
     expect(() => compile(result?.code ?? "", { filename: "slugs.svelte" })).not.toThrow();
   });
 
+  it("seeds vfile.data.fm with Typst metadata so plugins can read and augment it", async () => {
+    const rehypeInjectFm = () => (_tree: any, file: any) => {
+      // Plugin reads existing title and adds a derived field
+      const existing = file.data.fm ?? {};
+      file.data.fm = { ...existing, slug: (existing.title ?? "").toLowerCase().replace(/\s+/g, "-") };
+    };
+
+    const source = `#metadata((title: "My Post")) <frontmatter>
+
+= Hello
+`;
+
+    const result = await svelteTypst({
+      rehypePlugins: [rehypeInjectFm],
+    }).markup?.({
+      content: source,
+      filename: "fm-merge.typ",
+    });
+
+    expect(result?.code).toContain(`"title":"My Post"`);
+    expect(result?.code).toContain(`"slug":"my-post"`);
+    expect(() => compile(result?.code ?? "", { filename: "fm-merge.svelte" })).not.toThrow();
+  });
+
   it("escapes braces injected by rehype plugins", async () => {
     const rehypeInjectBraces = () => (tree: any) => {
       tree.children.push({

@@ -1,8 +1,11 @@
 # Svork
 
-Svork provides `svelteMarkdown`, a Svelte 5 preprocessor for Markdown files that need a small amount of Svelte interop.
+Svelte 5 preprocessors for content files.
 
-It is intended for blog/content pages where Markdown should stay ergonomic while still allowing frontmatter, scripts, components, and inline expressions like `{post.title}`.
+- `svelteMarkdown` — Markdown with Svelte interop
+- `svelteTypst` — Typst documents compiled to Svelte components
+
+---
 
 ## Install
 
@@ -10,22 +13,30 @@ It is intended for blog/content pages where Markdown should stay ergonomic while
 bun add -D @mralfarrakhan/svork
 ```
 
-Svork has a peer dependency on Svelte 5.
+For Typst support, also install the compiler:
 
-## Usage
+```sh
+bun add -D @myriaddreamin/typst-ts-node-compiler
+```
 
-Add the preprocessor to your Svelte config:
+---
+
+## svelteMarkdown
+
+Markdown files with frontmatter, scripts, components, and inline expressions.
+
+### Setup
 
 ```js
-import { svelteMarkdown } from "svork";
+import { svelteMarkdown } from "@mralfarrakhan/svork";
 
 export default {
   preprocess: [svelteMarkdown()],
-  extensions: [".svx", ".md"],
+  extensions: [".svelte", ".md"],
 };
 ```
 
-Then write Markdown with the supported Svelte syntax:
+### Usage
 
 ```svelte
 ---
@@ -35,7 +46,6 @@ author: Budi
 
 <script lang="ts">
   import Badge from "./Badge.svelte";
-
   const label = "New";
 </script>
 
@@ -46,55 +56,107 @@ author: Budi
 Hello, {metadata.author}.
 ```
 
-Frontmatter is exported as `metadata` from the instance script:
+Frontmatter is exported as `metadata` from a module script:
 
-```svelte
-export const metadata = {
-  title: "Hello",
-  author: "Budi",
-};
+```ts
+export const metadata = { title: "Hello", author: "Budi" };
 ```
 
-## Options
+### Options
 
 ```ts
 type SvelteMarkdownOptions = {
-  extensions?: string[];
+  extensions?: string[];       // default: [".md"]
   remarkPlugins?: PluggableList;
   rehypePlugins?: PluggableList;
 };
 ```
 
-`extensions` defaults to `[".md"]`.
-
-Example with common unified plugins:
+Example with plugins:
 
 ```js
 import rehypeExpressiveCode from "rehype-expressive-code";
 import remarkGfm from "remark-gfm";
-import { svelteMarkdown } from "svork";
+
+svelteMarkdown({
+  remarkPlugins: [remarkGfm],
+  rehypePlugins: [[rehypeExpressiveCode, { themes: ["github-light"] }]],
+})
+```
+
+### Behavior
+
+- Parses source with Svelte before Markdown so Svelte spans are protected.
+- Hides code spans and fenced blocks from the Svelte parse — `{`, `}`, component-like text inside code stay as code.
+- Preserves instance scripts, module scripts, components, and inline expression tags.
+- Runs `remarkPlugins` and `rehypePlugins` through the unified pipeline.
+- Escapes remaining text and attribute braces after rehype plugins run.
+- Emits unsupported Svelte syntax as text: `{#if}`, `{#each}`, `{#snippet}`, `{@html}`, `{@render}`, and directives on lowercase elements.
+- Falls back to Markdown-only processing with metadata export when Svelte parsing fails.
+
+---
+
+## svelteTypst
+
+Full Typst documents compiled to Svelte components at build time.
+
+### Setup
+
+```js
+import { svelteTypst } from "@mralfarrakhan/svork";
 
 export default {
-  preprocess: [
-    svelteMarkdown({
-      remarkPlugins: [remarkGfm],
-      rehypePlugins: [[rehypeExpressiveCode, { themes: ["github-light"] }]],
-    }),
-  ],
-  extensions: [".svelte", ".md"],
+  preprocess: [svelteTypst()],
+  extensions: [".svelte", ".typ"],
 };
 ```
 
-## Behavior
+### Usage
 
-- Parses source with Svelte before Markdown processing so Svelte spans can be protected.
-- Hides Markdown code spans and fenced code blocks from the initial Svelte parse, so examples containing `{`, `}`, quotes, or component-like text stay ordinary code.
-- Processes the document as one Markdown stream, preserving inline components inside paragraphs and list items.
-- Preserves instance scripts, module scripts, Svelte components, and normal inline expression tags.
-- Runs user `remarkPlugins` and `rehypePlugins` through the unified pipeline.
-- Escapes remaining text and attribute braces after rehype plugins run, so generated highlighter markup remains Svelte-safe.
-- Emits unsupported Svelte syntax as text, including `{#if}`, `{#each}`, `{#snippet}`, `{@html}`, `{@render}`, and lowercase-element directives such as `bind:*` or `class:*`.
-- Falls back to Markdown processing with metadata export when Svelte parsing fails.
+```typst
+#metadata((
+  title: "My Post",
+  date: "2026-01-01",
+)) <frontmatter>
+
+= Section Heading
+
+A paragraph with *bold* and _italic_ text.
+
+== Subsection
+
+More content. A footnote.#footnote[Footnote content here.]
+```
+
+Metadata is exported from a module script:
+
+```ts
+export const metadata = { title: "My Post", date: "2026-01-01" };
+```
+
+### Options
+
+```ts
+type SvelteTypstOptions = {
+  extensions?: string[];       // default: [".typ"]
+  rehypePlugins?: PluggableList;
+  compileArgs?: CompileArgs;   // passed to NodeCompiler.create()
+};
+```
+
+`compileArgs` accepts `fontArgs`, `workspace`, and `inputs` from `@myriaddreamin/typst-ts-node-compiler`.
+
+### Behavior
+
+- Compiles Typst source with `typst-ts-node-compiler` at build time (no runtime dependency).
+- Extracts metadata via `#metadata((...)) <frontmatter>` label. Values must be JSON-serializable.
+- Runs `rehypePlugins` on the HTML output. Headings are root-level tree children, so plugins like `rehype-sectionize` work correctly.
+- Seeds `vfile.data.fm` with extracted metadata before running plugins — plugins can read and augment it.
+- Escapes braces in output for Svelte safety.
+- No Svelte expressions or components inside `.typ` files — Typst owns the document syntax.
+- Heading levels are offset by one: `= Heading` → `<h2>`, `== Heading` → `<h3>`. Typst reserves `<h1>` for the document title.
+
+---
 
 ## Development
 

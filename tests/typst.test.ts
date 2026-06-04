@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compile } from "svelte/compiler";
+import { writeFileSync, unlinkSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import { svelteTypst } from "../src";
@@ -133,6 +136,28 @@ Another paragraph.
     expect(result?.code).toContain(`"title":"My Post"`);
     expect(result?.code).toContain(`"slug":"my-post"`);
     expect(() => compile(result?.code ?? "", { filename: "fm-merge.svelte" })).not.toThrow();
+  });
+
+  it("resolves relative imports from the file's directory", async () => {
+    const dir = join(process.cwd(), "tests");
+    const helperPath = join(dir, "svork-test-helper.typ");
+    const mainPath = join(dir, "svork-test-main.typ");
+
+    writeFileSync(helperPath, `#let greeting = "Hello from import"`);
+
+    const mainContent = `#import "svork-test-helper.typ": greeting\n\n#greeting`;
+
+    try {
+      const result = await svelteTypst().markup?.({
+        content: mainContent,
+        filename: mainPath,
+      });
+
+      expect(result?.code).toContain("Hello from import");
+      expect(() => compile(result?.code ?? "", { filename: "main.svelte" })).not.toThrow();
+    } finally {
+      unlinkSync(helperPath);
+    }
   });
 
   it("escapes braces injected by rehype plugins", async () => {

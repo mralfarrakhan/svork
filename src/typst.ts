@@ -1,3 +1,4 @@
+import { resolve } from "path";
 import type { PreprocessorGroup } from "svelte/compiler";
 import type { Root } from "hast";
 import { unified, type PluggableList } from "unified";
@@ -41,7 +42,10 @@ export const svelteTypst = (options?: SvelteTypstOptions): PreprocessorGroup => 
       const c = getCompiler();
 
       // 1. Compile Typst source to HTML target — one pass for both query and rendering
-      const compiled = c.compileHtml({ mainFileContent: content });
+      // Shadow the file at its real path so relative imports and images resolve correctly.
+      const absolutePath = resolve(filename);
+      c.addSource(absolutePath, content);
+      const compiled = c.compileHtml({ mainFilePath: absolutePath });
       if (compiled.hasError()) {
         compiled.printErrors();
         throw new Error(`[svelteTypst] Compilation failed for ${filename}`);

@@ -90,7 +90,10 @@ const getPlaceholderReplacement = (
       ? getExpressionSurrogate(original)
       : getComponentSurrogate(original);
 
-  return `<svork-placeholder data-svork-id="${escapeHtmlAttribute(token)}">${escapeHtmlText(surrogate)}</svork-placeholder>`;
+  // ComponentBoundary uses <div> (known block element) so remark never wraps it in <p>.
+  // Expression uses <svork-placeholder> (unknown inline element) to stay inline.
+  const tag = type === "ComponentBoundary" ? "div" : "svork-placeholder";
+  return `<${tag} data-svork-id="${escapeHtmlAttribute(token)}">${escapeHtmlText(surrogate)}</${tag}>`;
 };
 
 const isSvelteAttribute = (attr: any) => {
@@ -253,7 +256,8 @@ export const svelteMarkdown = (
           }
 
           const escPlaceholder = escapeRegExp(placeholder);
-          const markerPattern = `<svork-placeholder\\s+data-svork-id=(["'])${escPlaceholder}\\1[^>]*>[\\s\\S]*?<\\/svork-placeholder>`;
+          const markerTag = info.type === "ComponentBoundary" ? "div" : "svork-placeholder";
+          const markerPattern = `<${markerTag}\\s+data-svork-id=(["'])${escPlaceholder}\\1[^>]*>[\\s\\S]*?<\\/${markerTag}>`;
           const markerRegex = new RegExp(markerPattern, "g");
 
           if (

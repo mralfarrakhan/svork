@@ -93,6 +93,37 @@ const count = 0;
     expect(() => compile(result?.code ?? "", { filename: "instance-only.svelte" })).not.toThrow();
   });
 
+  it("does not wrap block components in <p> tags", async () => {
+    const source = `<script>
+import Card from "./Card.svelte";
+import Badge from "./Badge.svelte";
+</script>
+
+<Card title="Hello" />
+
+<Badge>
+Some content
+</Badge>
+`;
+
+    const result = await svelteMarkdown().markup?.({
+      content: source,
+      filename: "no-p-wrap.md",
+    });
+
+    // Self-closing component must not be wrapped in <p>
+    expect(result?.code).not.toMatch(/<p>\s*<Card/);
+    expect(result?.code).toContain(`<Card title="Hello" />`);
+
+    // Component with children: open and close tags must not be wrapped in <p>
+    expect(result?.code).not.toMatch(/<p>\s*<Badge/);
+    expect(result?.code).not.toMatch(/<p>\s*<\/Badge/);
+    expect(result?.code).toContain(`<Badge>`);
+    expect(result?.code).toContain(`</Badge>`);
+
+    expect(() => compile(result?.code ?? "", { filename: "no-p-wrap.svelte" })).not.toThrow();
+  });
+
   it("component", async () => {
     const source = `<script>
 import Budi from '../Budi.svelte';

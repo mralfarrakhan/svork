@@ -7,7 +7,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mralfarrakhan/svork.git"
+    "url": "git+https://github.com/mralfarrakhan/svork.git"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

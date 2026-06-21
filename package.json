@@ -1,7 +1,7 @@
 {
   "name": "@mralfarrakhan/svork",
   "type": "module",
-  "version": "0.8.0-alpha",
+  "version": "0.8.1-alpha",
   "description": "Svelte utilities for writing blog",
   "author": "mralfarrakhan <alfarrakhan@gmail.com",
   "license": "AGPL-3.0-or-later",
@@ -41,7 +41,7 @@
     "prepare": "bunx tsdown --dst"
   },
   "devDependencies": {
-    "@myriaddreamin/typst-ts-node-compiler": "^0.7.0-rc2",
+    "@myriaddreamin/typst-ts-node-compiler": "^0.8.0-rc1",
     "@shikijs/rehype": "^4.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
@@ -59,7 +59,7 @@
   },
   "peerDependencies": {
     "svelte": ">=5.0.0",
-    "@myriaddreamin/typst-ts-node-compiler": ">=0.7.0"
+    "@myriaddreamin/typst-ts-node-compiler": ">=0.8.0"
   },
   "peerDependenciesMeta": {
     "@myriaddreamin/typst-ts-node-compiler": {

@@ -713,6 +713,47 @@ title: Image Post
       expect(result?.code).toContain(`<img src={iconSvg} alt="icon">`);
       expect(() => compile(result?.code ?? "", { filename: "list-image.svelte" })).not.toThrow();
     });
+
+    it("normalizes bare paths to ./ prefix for import resolution", async () => {
+      const source = `![img](image.jpg)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "bare-path.md",
+      });
+
+      expect(result?.code).toContain(`import imageJpg from './image.jpg';`);
+      expect(result?.code).toContain(`<img src={imageJpg} alt="img">`);
+      expect(() => compile(result?.code ?? "", { filename: "bare-path.svelte" })).not.toThrow();
+    });
+
+    it("deduplicates bare path and ./ prefixed path as same import", async () => {
+      const source = `![a](image.jpg)\n\n![b](./image.jpg)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "dedup-bare.md",
+      });
+
+      const importMatches = (result?.code ?? "").match(/import imageJpg from/g);
+      expect(importMatches?.length).toBe(1);
+      const srcMatches = (result?.code ?? "").match(/src=\{imageJpg\}/g);
+      expect(srcMatches?.length).toBe(2);
+      expect(() => compile(result?.code ?? "", { filename: "dedup-bare.svelte" })).not.toThrow();
+    });
+
+    it("preserves $lib alias paths unchanged", async () => {
+      const source = `![lib]($lib/assets/logo.svg)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "dollar-lib.md",
+      });
+
+      expect(result?.code).toContain(`import logoSvg from '$lib/assets/logo.svg';`);
+      expect(result?.code).toContain(`<img src={logoSvg} alt="lib">`);
+      expect(() => compile(result?.code ?? "", { filename: "dollar-lib.svelte" })).not.toThrow();
+    });
   });
 
 });

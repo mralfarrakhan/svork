@@ -207,40 +207,46 @@ export const svelteMarkdown = (
     varName: string;   // generated JS import identifier
   };
 
+  // Normalize a local image path for import resolution.
+  // "image.jpg" → "./image.jpg", "$lib/a.png" / "/static/a.png" / "./a.png" → unchanged.
+  const normalizeImportPath = (path: string): string => {
+    if (/^[./$]/.test(path)) return path;
+    return `./${path}`;
+  };
+
   // Remark plugin: transforms local markdown images into placeholder tokens.
   // Collects import info in vfile.data.svorkImages for post-processing.
   const remarkImagesPlugin = () => (tree: any, file: any) => {
     if (!file.data.importImages) return;
 
     const images: ImageRecord[] = [];
-    const seenUrls = new Map<string, string>(); // url → token
+    const seenUrls = new Map<string, string>(); // normalizedPath → token
     let counter = 0;
 
     const walk = (node: any) => {
       if (!node) return;
       if (node.type === "image") {
-        const url: string = (node as any).url ?? "";
-        if (isLocalImageUrl(url)) {
-          let token = seenUrls.get(url);
+        const rawUrl: string = (node as any).url ?? "";
+        if (isLocalImageUrl(rawUrl)) {
+          const importPath = normalizeImportPath(rawUrl);
+          let token = seenUrls.get(importPath);
           let varName: string;
           if (token) {
-            // Duplicate: reuse existing varName from a prior record.
             const existing = images.find((r) => r.token === token);
-            varName = existing?.varName ?? imagePathToIdentifier(url);
+            varName = existing?.varName ?? imagePathToIdentifier(importPath);
           } else {
             token = `__SVORK_IMG_${counter++}__`;
-            varName = imagePathToIdentifier(url);
-            // Handle collision: if varName already used for a different URL, append suffix.
+            varName = imagePathToIdentifier(importPath);
             let suffix = 2;
             let candidate = varName;
-            while (images.some((r) => r.varName === candidate && r.url !== url)) {
+            while (images.some((r) => r.varName === candidate && r.url !== importPath)) {
               candidate = `${varName}_${suffix++}`;
             }
             varName = candidate;
-            seenUrls.set(url, token);
+            seenUrls.set(importPath, token);
           }
           images.push({
-            url,
+            url: importPath,
             alt: node.alt ?? "",
             title: node.title ?? null,
             token,

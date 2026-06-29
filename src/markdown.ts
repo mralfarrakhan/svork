@@ -5,7 +5,8 @@ import remarkRehype from "remark-rehype";
 import rehypeRaw from "rehype-raw";
 import rehypeStringify from "rehype-stringify";
 import yaml from "js-yaml";
-import { escapeBracesPlugin, revertDoubleEscapedBraces } from "./shared.js";
+import { VFile } from "vfile";
+import { escapeBracesPlugin, revertDoubleEscapedBraces, isLocalImageUrl, imagePathToIdentifier } from "./shared.js";
 
 type PlaceholderType =
   | "Expression"
@@ -30,6 +31,8 @@ export type SvelteMarkdownOptions = {
   extensions?: string[];
   remarkPlugins?: PluggableList;
   rehypePlugins?: PluggableList;
+  /** Transform local markdown images into Svelte imports. Default: false. */
+  importImages?: boolean;
 };
 
 // Lightweight id generator to avoid deterministic collisions
@@ -195,9 +198,72 @@ export const svelteMarkdown = (
 
   const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
+  // Per-image record stored in vfile.data.svorkImages by the remark plugin.
+  type ImageRecord = {
+    url: string;       // original markdown image URL
+    alt: string;       // alt text
+    title: string | null; // optional title
+    token: string;     // plain-text placeholder token (e.g. __SVORK_IMG_0__)
+    varName: string;   // generated JS import identifier
+  };
+
+  // Remark plugin: transforms local markdown images into placeholder tokens.
+  // Collects import info in vfile.data.svorkImages for post-processing.
+  const remarkImagesPlugin = () => (tree: any, file: any) => {
+    if (!file.data.importImages) return;
+
+    const images: ImageRecord[] = [];
+    const seenUrls = new Map<string, string>(); // url → token
+    let counter = 0;
+
+    const walk = (node: any) => {
+      if (!node) return;
+      if (node.type === "image") {
+        const url: string = (node as any).url ?? "";
+        if (isLocalImageUrl(url)) {
+          let token = seenUrls.get(url);
+          let varName: string;
+          if (token) {
+            // Duplicate: reuse existing varName from a prior record.
+            const existing = images.find((r) => r.token === token);
+            varName = existing?.varName ?? imagePathToIdentifier(url);
+          } else {
+            token = `__SVORK_IMG_${counter++}__`;
+            varName = imagePathToIdentifier(url);
+            // Handle collision: if varName already used for a different URL, append suffix.
+            let suffix = 2;
+            let candidate = varName;
+            while (images.some((r) => r.varName === candidate && r.url !== url)) {
+              candidate = `${varName}_${suffix++}`;
+            }
+            varName = candidate;
+            seenUrls.set(url, token);
+          }
+          images.push({
+            url,
+            alt: node.alt ?? "",
+            title: node.title ?? null,
+            token,
+            varName,
+          });
+          node.url = token;
+        }
+      }
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) walk(child);
+      }
+    };
+
+    walk(tree);
+    if (images.length > 0) {
+      file.data.svorkImages = images;
+    }
+  };
+
   const mdCompiler = unified()
     .use(remarkParse)
     .use(options?.remarkPlugins ?? [])
+    .use(remarkImagesPlugin)
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
     .use(options?.rehypePlugins ?? [])
@@ -230,7 +296,10 @@ export const svelteMarkdown = (
         markdownSource: string,
         placeholderMap = new Map<string, PlaceholderInfo>(),
       ) => {
-        const vfile = await mdCompiler.process(markdownSource);
+        const importImages = !!options?.importImages;
+        const vfile = await mdCompiler.process(
+          new VFile({ value: markdownSource, data: { importImages } }),
+        );
         let compiled = revertDoubleEscapedBraces(String(vfile));
         let restored = compiled;
 
@@ -239,10 +308,33 @@ export const svelteMarkdown = (
           metadata = { ...metadata, ...(vfile.data.fm as Record<string, any>) };
         }
 
+        // Replace image placeholder tokens with Svelte expression syntax.
+        // e.g. <img src="__SVORK_IMG_0__" alt="cat"> → <img src={catPng} alt="cat">
+        const svorkImages: ImageRecord[] =
+          (vfile.data?.svorkImages as ImageRecord[]) ?? [];
+        const hasImages = svorkImages.length > 0;
+        if (hasImages) {
+          for (const img of svorkImages) {
+            const escToken = escapeRegExp(img.token);
+            // Match token in src="..." or src='...'
+            const srcRegex = new RegExp(
+              `src=(["'])${escToken}\\1`,
+              "g",
+            );
+            restored = restored.replace(
+              srcRegex,
+              `src={${img.varName}}`,
+            );
+          }
+        }
+
         const metadataString = `\nexport const metadata = ${JSON.stringify(metadata)};\n`;
         let hasModuleScript = false;
+        let hasInstanceScript = false;
 
-        for (const [placeholder, info] of placeholderMap.entries()) {
+        // Pre-pass: inject metadata into module scripts and image imports into instance scripts.
+        // Must happen before the placeholder restoration loop consumes info.original.
+        for (const [, info] of placeholderMap.entries()) {
           if (info.type === "ModuleScript") {
             const scriptTagMatch = info.original.match(/^<script[^>]*>/);
             if (scriptTagMatch) {
@@ -254,6 +346,40 @@ export const svelteMarkdown = (
             }
             hasModuleScript = true;
           }
+          if (info.type === "InstanceScript") {
+            hasInstanceScript = true;
+          }
+        }
+
+        // Inject image imports into instance script (or prepend a new one).
+        if (hasImages) {
+          const importLines = svorkImages
+            .filter((img, i, arr) => arr.findIndex((r) => r.varName === img.varName) === i)
+            .map((img) => `import ${img.varName} from '${img.url}';\n`)
+            .join("");
+
+          if (hasInstanceScript) {
+            for (const [, info] of placeholderMap.entries()) {
+              if (info.type === "InstanceScript") {
+                const scriptTagMatch = info.original.match(/^<script[^>]*>/);
+                if (scriptTagMatch) {
+                  const injectIndex = scriptTagMatch[0].length;
+                  info.original =
+                    info.original.slice(0, injectIndex) +
+                    "\n" +
+                    importLines +
+                    info.original.slice(injectIndex);
+                }
+                break;
+              }
+            }
+          } else {
+            // Prepend new instance script. Module script (if any) will be prepended later on top.
+            restored = `<script lang="ts">\n${importLines}</script>\n` + restored;
+          }
+        }
+
+        for (const [placeholder, info] of placeholderMap.entries()) {
 
           const escPlaceholder = escapeRegExp(placeholder);
           const markerTag = info.type === "ComponentBoundary" ? "div" : "svork-placeholder";

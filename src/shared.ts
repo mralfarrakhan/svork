@@ -1,3 +1,44 @@
+// Check if an image URL refers to a local file (not remote, not data URI, not hash-only).
+// "./cat.png" / "../img/logo.svg" / "assets/photo.jpg" → true
+// "https://example.com/img.png" / "data:image/png;base64,..." / "#ref" → false
+export const isLocalImageUrl = (url: string): boolean => {
+  if (!url) return false;
+  return !/^(https?:)?\/\//i.test(url) && !/^data:/i.test(url) && !/^#/.test(url);
+};
+
+// Convert file path to valid JavaScript identifier.
+// "./my-cat-photo.png" → "myCatPhotoPng"
+// "../assets/logo.svg" → "logoSvg"
+// "cat.jpeg" → "catJpeg"
+// "some_dir/file-name.png" → "fileNamePng"
+export const imagePathToIdentifier = (path: string): string => {
+  // Strip directory and extension
+  const basename = path.replace(/^.*[/\\]/, "");
+  const dotIndex = basename.lastIndexOf(".");
+  const name = dotIndex > 0 ? basename.slice(0, dotIndex) : basename;
+  const ext = dotIndex > 0 ? basename.slice(dotIndex + 1).toLowerCase() : "";
+
+  // kebab-case / snake_case / mixed.dots → camelCase
+  const camel = name
+    .replace(/[^a-zA-Z0-9]+(.)/g, (_, c: string) => c.toUpperCase())
+    .replace(/^[^a-zA-Z_$]/, "");
+
+  // PascalCase → camelCase (first char lower)
+  const identifier = camel.charAt(0).toLowerCase() + camel.slice(1) || "img";
+
+  // Append extension as PascalCase suffix for disambiguation
+  const extSuffix = ext
+    ? ext.charAt(0).toUpperCase() + ext.slice(1).replace(/[^a-zA-Z0-9]/g, "")
+    : "";
+
+  const result = identifier + extSuffix;
+
+  // Ensure valid JS identifier: must start with letter/_/$
+  if (!/^[a-zA-Z_$]/.test(result)) return "img" + (extSuffix || "Asset");
+
+  return result;
+};
+
 const escapeSvelteTextBraces = (value: string) =>
   value.replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
 

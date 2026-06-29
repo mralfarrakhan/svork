@@ -564,4 +564,155 @@ This is a test article with enough words to measure.
     expect(() => compile(result?.code ?? "", { filename: "reading-time.svelte" })).not.toThrow();
   });
 
+  describe("importImages", () => {
+    it("transforms local markdown image into svelte import", async () => {
+      const source = `<script>
+import Card from "./Card.svelte";
+</script>
+
+![cat](./cat.png)
+`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "local-image.md",
+      });
+
+      expect(result?.code).toContain(`import catPng from './cat.png';`);
+      expect(result?.code).toContain(`<img src={catPng} alt="cat">`);
+      expect(result?.code).toContain(`import Card from "./Card.svelte";`);
+      expect(() => compile(result?.code ?? "", { filename: "local-image.svelte" })).not.toThrow();
+    });
+
+    it("transforms images with kebab-case paths", async () => {
+      const source = `![My Photo](./assets/my-cat-photo.png)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "kebab-image.md",
+      });
+
+      expect(result?.code).toContain(`import myCatPhotoPng from './assets/my-cat-photo.png';`);
+      expect(result?.code).toContain(`<img src={myCatPhotoPng} alt="My Photo">`);
+      expect(() => compile(result?.code ?? "", { filename: "kebab-image.svelte" })).not.toThrow();
+    });
+
+    it("passes remote URLs through unchanged", async () => {
+      const source = `![remote](https://example.com/cat.png)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "remote-url.md",
+      });
+
+      expect(result?.code).toContain(`<img src="https://example.com/cat.png" alt="remote">`);
+      expect(result?.code).not.toContain(`import`);
+      expect(() => compile(result?.code ?? "", { filename: "remote-url.svelte" })).not.toThrow();
+    });
+
+    it("passes data URIs through unchanged", async () => {
+      const source = `![inline](data:image/png;base64,abc123)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "data-uri.md",
+      });
+
+      expect(result?.code).toContain(`<img src="data:image/png;base64,abc123" alt="inline">`);
+      expect(result?.code).not.toContain(`import`);
+      expect(() => compile(result?.code ?? "", { filename: "data-uri.svelte" })).not.toThrow();
+    });
+
+    it("deduplicates repeated images to a single import", async () => {
+      const source = `![a](./cat.png)\n\n![b](./cat.png)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "dupe-image.md",
+      });
+
+      // Only one import
+      const importMatches = (result?.code ?? "").match(/import catPng from/g);
+      expect(importMatches?.length).toBe(1);
+      // Both <img> tags use the same variable
+      const srcMatches = (result?.code ?? "").match(/src=\{catPng\}/g);
+      expect(srcMatches?.length).toBe(2);
+      expect(() => compile(result?.code ?? "", { filename: "dupe-image.svelte" })).not.toThrow();
+    });
+
+    it("preserves title attribute on images", async () => {
+      const source = `![cat](./cat.png "A cute cat")`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "title-image.md",
+      });
+
+      expect(result?.code).toContain(`import catPng from './cat.png';`);
+      expect(result?.code).toContain(`<img src={catPng} alt="cat" title="A cute cat">`);
+      expect(() => compile(result?.code ?? "", { filename: "title-image.svelte" })).not.toThrow();
+    });
+
+    it("handles multiple distinct images", async () => {
+      const source = `![cat](./cat.png)\n\n![dog](./dog.jpg)`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "multi-image.md",
+      });
+
+      expect(result?.code).toContain(`import catPng from './cat.png';`);
+      expect(result?.code).toContain(`import dogJpg from './dog.jpg';`);
+      expect(result?.code).toContain(`<img src={catPng} alt="cat">`);
+      expect(result?.code).toContain(`<img src={dogJpg} alt="dog">`);
+      expect(() => compile(result?.code ?? "", { filename: "multi-image.svelte" })).not.toThrow();
+    });
+
+    it("creates instance script when none exists", async () => {
+      const source = `---
+title: Image Post
+---
+
+![cat](./cat.png)
+`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "no-script.md",
+      });
+
+      expect(result?.code).toContain(`<script lang="ts">`);
+      expect(result?.code).toContain(`import catPng from './cat.png';`);
+      expect(result?.code).toContain(`export const metadata = {"title":"Image Post"};`);
+      expect(result?.code).toContain(`<img src={catPng} alt="cat">`);
+      expect(() => compile(result?.code ?? "", { filename: "no-script.svelte" })).not.toThrow();
+    });
+
+    it("is off by default", async () => {
+      const source = `![cat](./cat.png)`;
+
+      const result = await svelteMarkdown().markup?.({
+        content: source,
+        filename: "default-off.md",
+      });
+
+      expect(result?.code).toContain(`<img src="./cat.png" alt="cat">`);
+      expect(result?.code).not.toContain(`import`);
+      expect(() => compile(result?.code ?? "", { filename: "default-off.svelte" })).not.toThrow();
+    });
+
+    it("images inside lists work correctly", async () => {
+      const source = `- item one\n- ![icon](./icon.svg)\n- item three`;
+
+      const result = await svelteMarkdown({ importImages: true }).markup?.({
+        content: source,
+        filename: "list-image.md",
+      });
+
+      expect(result?.code).toContain(`import iconSvg from './icon.svg';`);
+      expect(result?.code).toContain(`<img src={iconSvg} alt="icon">`);
+      expect(() => compile(result?.code ?? "", { filename: "list-image.svelte" })).not.toThrow();
+    });
+  });
+
 });
